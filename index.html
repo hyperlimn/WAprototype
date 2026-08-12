@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Universe 0</title>
+  </head>
+  <body>
+    <main id="app">
+      <aside class="sidebar" aria-label="Universe controls and diagnostics">
+        <header class="sidebar-title">
+          <p class="eyebrow">GENERATIVE SYSTEM / <span id="simulationVersion">U0</span></p>
+          <h1>Universe 0</h1>
+          <p>Immutable fingerprints under evolving local laws</p>
+        </header>
+
+        <section class="sidebar-section controls" aria-label="Core controls">
+          <h2>Core controls</h2>
+          <div class="control-actions">
+            <button id="playPause" type="button">Pause</button>
+            <button id="restart" type="button">Restart seed</button>
+            <button id="newUniverse" type="button">New seed</button>
+          </div>
+          <label><span>Relation filter <output id="relationValue">0.72</output></span>
+            <input id="relation" type="range" min="0" max="1" value="0.72" step="0.01" /></label>
+          <label><span>Simulation speed <output id="speedValue">1.00×</output></span>
+            <input id="speed" type="range" min="-100" max="400" value="0" step="1" /></label>
+          <p class="hint">Drag to pan · wheel to scale · click a point to inspect</p>
+        </section>
+
+        <section class="sidebar-section observation" aria-label="Observation Mode controls">
+          <h2>Observation Mode</h2>
+          <label class="observation-mode"><span><span>Enable observation</span><input id="observationMode" type="checkbox" /></span></label>
+          <div id="observationOptions" class="observation-options" hidden>
+            <label><span><span>Initial entities</span><input id="observeInitial" type="checkbox" checked /></span></label>
+            <label><span><span>External arrivals</span><input id="observeExternal" type="checkbox" checked /></span></label>
+            <label><span><span>Reproduction entities</span><input id="observeReproduction" type="checkbox" checked /></span></label>
+            <label><span><span>Relationship events</span><input id="observeRelationships" type="checkbox" checked /></span></label>
+            <label><span><span>Dimensional transitions</span><input id="observeDimensions" type="checkbox" checked /></span></label>
+          </div>
+          <label><span><span>Spatial relationship layer</span><input id="spatialRelationshipLayer" type="checkbox" checked /></span></label>
+          <label><span><span>Influence layer</span><input id="influenceLayer" type="checkbox" checked /></span></label>
+          <label><span><span>Field</span><input id="fieldLayer" type="checkbox" /></span></label>
+        </section>
+
+        <section class="sidebar-section instruments" aria-label="World instruments">
+          <h2>World instruments</h2><dl id="instruments"></dl>
+        </section>
+        <section class="sidebar-section inspector" id="inspector" aria-label="Entity inspector">
+          <h2>Entity / relationship inspector</h2>
+          <p class="empty">Select a point to inspect its immutable fingerprint and current state.</p>
+        </section>
+        <section class="sidebar-section occurrences" aria-label="Recent occurrences">
+          <h2>Occurrences</h2><ol id="occurrences"><li class="empty">No occurrences recorded.</li></ol>
+        </section>
+        <section class="sidebar-section export-section" aria-label="Machine-readable diagnostics">
+          <h2>Export / machine-readable diagnostics</h2>
+          <button id="copySimulationLog" class="primary-action" type="button">Copy simulation log</button>
+          <p id="copyStatus" class="copy-status" role="status" aria-live="polite"></p>
+        </section>
+        <section class="sidebar-section machine-interface" aria-label="Machine interface status">
+          <h2>Machine interface</h2>
+          <dl>
+            <div><dt>Bridge</dt><dd id="bridgeConnection">disconnected</dd></div>
+            <div><dt>API</dt><dd>localhost:8787</dd></div>
+            <div><dt>Last publish</dt><dd id="bridgeLastPublish">never</dd></div>
+          </dl>
+        </section>
+      </aside>
+      <div class="canvas-region"><canvas id="universe" aria-label="Universe 0 simulation"></canvas></div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

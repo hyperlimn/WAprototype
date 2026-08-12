@@ -1,0 +1,24 @@
+{
+  "name": "universe-0",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n app,bridge \"npm:dev:app\" \"npm:dev:bridge\"",
+    "dev:app": "vite",
+    "dev:bridge": "tsx server/index.ts",
+    "build": "tsc && tsc -p tsconfig.server.json && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/ws": "^8.18.1",
+    "concurrently": "^10.0.4",
+    "tsx": "^4.23.12",
+    "@types/node": "^24.2.1",
+    "concurrently": "^10.0.4",
+    "tsx": "^4.23.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  }
+}
