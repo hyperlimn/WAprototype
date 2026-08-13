@@ -201,6 +201,22 @@ Historical API:
 
 When `seed` is omitted, historical routes resolve the currently active bridge universe. An explicit unknown seed returns `404` and is never replaced by another archive. Archive navigation selects history; it does not alter history.
 
+### Machine perception
+
+Machine perception is an instrument, not a law of the universe. Perception schema `protouniverse-perception/1` consumes cached canonical snapshots, archive events, and observational checkpoints through machine interface `protouniverse-machine-interface/5`. Authoritative fields identify their snapshot or archive source; anomaly scores, comparisons, context, similarity, and attention rankings are explicitly labeled derived or inferred with their method, baseline, and limitations.
+
+- `GET /api/perception/orient?seed` answers what is happening and suggests where to look.
+- `GET /api/perception/inspect?kind&depth&...target` inspects entities, relationships, regions, events, or checkpoints with bounded depth 1–3.
+- `GET /api/perception/context?kind&...target` zooms out to geometric and connected context without inventing authoritative cluster identity.
+- `GET /api/perception/changes?seed&sinceTick|checkpoint|compareSeed&tick` compares cached observations and never claims causation.
+- `GET /api/perception/anomalies?seed&kind&limit&x&y&radius` uses explainable median/MAD scoring.
+- `GET /api/perception/similar?seed&kind&id&limit` uses versioned normalized features; regions use `x`, `y`, and `radius` instead of `id`.
+- `GET /api/perception/compare?kind&seed&compareSeed&idA&idB&tickA&tickB` compares compatible targets and warns when simulation versions differ.
+- `GET /api/perception/since-last?observer&seed` reports changes since an observer bookmark.
+- `POST /api/perception/mark-observed` with `{ observer, seed, tick }` writes only lightweight metadata beneath `data/observers/`.
+
+Attention suggestions transparently combine anomaly, connectivity, persistence, recent activity, and structural extremity. All analyses are bounded and reconstructable; none calls the live `Universe`, steps it, or requests a snapshot.
+
 - Distribution and lifetime of bonds, not just the active count.
 - Relationship values within persistent groups compared with the population baseline.
 - Local-density distribution and whether its variance grows over time.

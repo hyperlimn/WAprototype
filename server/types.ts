@@ -1,6 +1,6 @@
 import type { EntityRecord, OccurrenceRecord, QuerySnapshot, RelationshipRecord } from "../src/query/queryTypes.js";
 
-export const INTERFACE_VERSION = "protouniverse-machine-interface/4";
+export const INTERFACE_VERSION = "protouniverse-machine-interface/5";
 
 export interface Heartbeat {
   interfaceVersion: string;

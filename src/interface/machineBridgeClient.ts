@@ -2,7 +2,7 @@ import type { Universe } from "../simulation/universe";
 import { SIMULATION_VERSION } from "../simulation/universe";
 import { buildWorldSnapshot } from "./worldSnapshot";
 
-export const MACHINE_INTERFACE_VERSION = "protouniverse-machine-interface/4";
+export const MACHINE_INTERFACE_VERSION = "protouniverse-machine-interface/5";
 export const HEARTBEAT_INTERVAL_MS = 1_000;
 export const SNAPSHOT_INTERVAL_MS = 5_000;
 

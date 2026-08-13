@@ -10,16 +10,19 @@ import { memoryPolicyFromEnvironment } from "../src/memory/memoryPolicy.js";
 import { MemoryStore } from "./memory/memoryStore.js";
 import { handleMemoryRoute } from "./memory/memoryRoutes.js";
 import { ArchiveNotFoundError } from "./memory/archiveSelection.js";
+import { PerceptionService, PerceptionResourceNotFoundError } from "./perception/perceptionService.js";
+import { handleMarkObserved, handlePerceptionRoute } from "./perception/perceptionRoutes.js";
 
 const HOST = process.env.PROTOUNIVERSE_BRIDGE_HOST ?? "127.0.0.1";
 const PORT = Number(process.env.PROTOUNIVERSE_BRIDGE_PORT ?? 8787);
 const store = new StateStore();
 const memory = new MemoryStore(path.resolve(process.env.PROTOUNIVERSE_MEMORY_ROOT ?? "data"), memoryPolicyFromEnvironment());
+const perception = new PerceptionService(store, memory);
 let browserConnected = false;
 
 const json = (response: ServerResponse, status: number, body: unknown): void => {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, OPTIONS", "Cache-Control": "no-store" });
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Cache-Control": "no-store" });
   response.end(JSON.stringify(body));
 };
 const notFound = (response: ServerResponse, resource: string, id?: string): void =>
@@ -28,8 +31,9 @@ const snapshotUnavailable = (response: ServerResponse): void => json(response, 5
 
 const handleRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
   if (request.method === "OPTIONS") return json(response, 204, null);
-  if (request.method !== "GET") return json(response, 405, { error: "method_not_allowed" });
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? `${HOST}:${PORT}`}`);
+  if (request.method === "POST" && url.pathname === "/api/perception/mark-observed") return handleMarkObserved(request, response, perception, json);
+  if (request.method !== "GET") return json(response, 405, { error: "method_not_allowed" });
   if (url.pathname === "/api") return json(response, 200, {
     project: "ProtoUniverse", interfaceVersion: INTERFACE_VERSION,
     description: "Observational, read-only access. The simulation is authoritative; interfaces observe it.",
@@ -45,6 +49,15 @@ const handleRequest = async (request: IncomingMessage, response: ServerResponse)
       historySummary: "GET /api/history/summary?seed&sinceTick&untilTick", checkpoints: "GET /api/checkpoints?seed&sinceTick&untilTick&limit",
       checkpoint: "GET /api/checkpoint/:tick?seed", nearestCheckpoint: "GET /api/checkpoint/nearest/:tick?seed&direction=before|after|nearest",
       memoryStatus: "GET /api/memory/status?seed",
+      perceptionOrient: "GET /api/perception/orient?seed",
+      perceptionInspect: "GET /api/perception/inspect?seed&kind&depth&id|x&y&radius|tick&sequence",
+      perceptionContext: "GET /api/perception/context?seed&kind&...target",
+      perceptionChanges: "GET /api/perception/changes?seed&sinceTick|checkpoint|compareSeed&tick",
+      perceptionAnomalies: "GET /api/perception/anomalies?seed&kind&limit",
+      perceptionSimilar: "GET /api/perception/similar?seed&kind&id&limit",
+      perceptionCompare: "GET /api/perception/compare?kind&seed&compareSeed&idA&idB&tickA&tickB",
+      perceptionSinceLast: "GET /api/perception/since-last?observer&seed",
+      perceptionMarkObserved: "POST /api/perception/mark-observed { observer, seed, tick }",
     },
     limits: { default: 100, maximum: 500, discoveryDefault: 10, lineageMaximumDepth: 10 },
   });
@@ -62,6 +75,7 @@ const handleRequest = async (request: IncomingMessage, response: ServerResponse)
     return json(response, 200, store.events.slice(-limit));
   }
   if (await handleMemoryRoute(url, response, memory, store.events.length, json)) return;
+  if (await handlePerceptionRoute(url, response, perception, json)) return;
   if (!store.snapshot) return isSnapshotRoute(url.pathname) ? snapshotUnavailable(response) : notFound(response, "endpoint");
   if (handleQueryRoute(url, response, store, json)) return;
   const entityMatch = url.pathname.match(/^\/api\/entity\/(\d+)$/);
@@ -84,6 +98,8 @@ export const server = createServer((request, response) => {
       json(response, 400, { error: "invalid_query", parameter: error.parameter, value: error.value, message: error.message });
     } else if (error instanceof ArchiveNotFoundError) {
       json(response, 404, { error: "not_found", resource: "universe", seed: error.seed, message: error.message });
+    } else if (error instanceof PerceptionResourceNotFoundError) {
+      json(response, 404, { error: "not_found", resource: error.resource, id: error.id, message: error.message });
     } else {
       console.error(error);
       json(response, 500, { error: "internal_error" });

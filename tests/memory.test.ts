@@ -10,8 +10,16 @@ import { MemoryStore } from "../server/memory/memoryStore.js";
 import { listUniverses } from "../server/memory/universeCatalog.js";
 import { resolveUniverse } from "../server/memory/archiveSelection.js";
 import { findNearestCheckpoint, listCheckpoints, queryHistoryPage } from "../server/memory/archiveQueries.js";
+import type { EntityRecord, RelationshipRecord } from "../src/query/queryTypes.js";
+import { orientUniverse } from "../src/perception/orientation.js";
+import { inspectTarget } from "../src/perception/inspection.js";
+import { findAnomalies } from "../src/perception/anomalyDetection.js";
+import { findSimilarEntity } from "../src/perception/similarity.js";
+import { compareEntities, compareUniverses } from "../src/perception/comparison.js";
+import { detectChanges } from "../src/perception/changeDetection.js";
+import { ObserverStore } from "../server/perception/observerStore.js";
 
-const identity = { seed: "test-seed", simulationVersion: "u0.6", interfaceVersion: "protouniverse-machine-interface/4" };
+const identity = { seed: "test-seed", simulationVersion: "u0.6", interfaceVersion: "protouniverse-machine-interface/5" };
 const complete: MemoryPolicy = { mode: "complete", checkpointIntervalTicks: 25_000, segmentMaxEvents: 2,
   recentDetailTicks: 100_000, condensedEraTicks: 100_000 };
 const event = (sequence: number, tick: number, type = "rupture", extra: Partial<OccurrenceRecord> = {}): OccurrenceRecord => ({
@@ -19,6 +27,16 @@ const event = (sequence: number, tick: number, type = "rupture", extra: Partial<
 });
 const snapshot = (tick: number): CanonicalSnapshot => ({ metadata: { currentTick: tick, seed: identity.seed, simulationVersion: identity.simulationVersion },
   entities: [], relationships: [], recentOccurrences: [] });
+
+const entity = (id: number, overrides: Partial<EntityRecord> = {}): EntityRecord => ({ id, creationIndex: id, fingerprint: `e${id}`, origin: id < 2 ? "initial" : "reproduction",
+  birthTick: id * 10, parentRelationshipId: id < 2 ? null : "r0", parentEntityIds: id < 2 ? null : [0, 1], alpha: 1, beta: 1, gamma: 1,
+  x: id * 10, y: id * 5, vx: id, vy: id / 2, energy: id + 1, age: 100 - id, neighborCount: id,
+  strongestRelationship: id / 10, strongestBond: id / 20, currentRelationshipIds: id < 2 ? ["r0"] : [], ...overrides });
+const relationship = (id: string, overrides: Partial<RelationshipRecord> = {}): RelationshipRecord => ({ id, fingerprint: id, parentAId: 0, parentBId: 1,
+  creationTick: 10, age: 90, spatialActive: true, influenceActive: true, bondStrength: .8, relationshipStrength: .9,
+  x: 5, y: 2.5, coherence: .9, localRelationshipDensity: 2, synergy: .6, localFieldPotential: .2, ruptureQualified: false, ...overrides });
+const richSnapshot = (tick = 100): CanonicalSnapshot => ({ ...snapshot(tick), entities: [entity(0), entity(1), entity(2), entity(3, { neighborCount: 100, energy: 50 })],
+  relationships: [relationship("r0"), relationship("r1", { parentAId: 2, parentBId: 3, x: 25, y: 12, coherence: .2, synergy: .05, localRelationshipDensity: 20 })] });
 
 async function fixture(policy = complete): Promise<{ root: string; store: MemoryStore; close: () => Promise<void> }> {
   const root = await mkdtemp(path.join(os.tmpdir(), "protouniverse-memory-"));
@@ -135,6 +153,48 @@ test("checkpoint ranges and nearest directions navigate fossils deterministicall
   } finally { await value.close(); }
 });
 
+test("orientation, attention, anomaly explanations, inspection, similarity, comparison, and changes are deterministic and non-mutating", () => {
+  const observed = richSnapshot(), before = JSON.stringify(observed);
+  const observation = { source: { seed: identity.seed, simulationVersion: identity.simulationVersion, tick: 100,
+    mode: "live" as const, authoritative: "canonical-snapshot" as const }, snapshot: observed,
+    events: [event(1, 90, "rupture", { relationshipId: "r0" })], memoryRange: { firstTick: 0, latestTick: 100 } };
+  const oriented = orientUniverse(observation);
+  const orientedDerived = oriented.derived as { identity: { liveOrArchived: string }; attentionSuggestions: unknown[] };
+  assert.equal(orientedDerived.identity.liveOrArchived, "live");
+  assert.ok(orientedDerived.attentionSuggestions.length > 0);
+  const anomalies = findAnomalies(observed, undefined, 10);
+  assert.ok(anomalies.length > 0); assert.equal(anomalies[0].explainability.method, "median-MAD");
+  const entityInspection = inspectTarget(observation, { kind: "entity", id: "2" }, 2)!;
+  assert.equal((entityInspection.target as { id: number }).id, 2); assert.ok(entityInspection.lineage);
+  const relationshipInspection = inspectTarget(observation, { kind: "relationship", id: "r0" }, 2)!;
+  assert.equal((relationshipInspection.target as { id: string }).id, "r0");
+  const regionInspection = inspectTarget(observation, { kind: "region", x: 0, y: 0, radius: 100 }, 1)!;
+  assert.match(String(regionInspection.summary), /region containing/);
+  const similar = findSimilarEntity(observed, observed.entities![0], 3) as { matches: Array<{ similarityScore: number }> };
+  assert.ok(similar.matches[0].similarityScore >= similar.matches.at(-1)!.similarityScore);
+  assert.equal((compareEntities(observed.entities![0], observed.entities![1]) as { kind: string }).kind, "entity-comparison");
+  const changed = detectChanges(observed, { ...snapshot(50), entities: observed.entities!.slice(0, 2), relationships: observed.relationships!.slice(0, 1) });
+  assert.ok((changed.newEntities as number[]).includes(2));
+  const cross = compareUniverses(observed, observed, ["u0.6", "u0.7"]) as { warnings: string[] };
+  assert.equal(cross.warnings.length, 1); assert.equal(JSON.stringify(observed), before);
+});
+
+test("archived orientation uses latest checkpoint and observer bookmarks preserve since-last state", async () => {
+  const value = await fixture();
+  try {
+    await value.store.ingestEvents([event(1, 25_000, "reproduction")], identity);
+    await value.store.ingestSnapshot(richSnapshot(25_100), identity);
+    const archive = resolveUniverse(await listUniverses(value.root), identity.seed, null);
+    const latest = await findNearestCheckpoint(archive, 30_000, "before"); assert.ok(latest);
+    const observation = { source: { seed: identity.seed, simulationVersion: identity.simulationVersion, tick: latest!.checkpoint.tick,
+      mode: "archived" as const, authoritative: "checkpoint" as const }, snapshot: latest!.checkpoint.snapshot,
+      events: (await queryHistoryPage(archive, { limit: 10 })).results, memoryRange: { firstTick: archive.manifest.firstTick, latestTick: archive.manifest.latestTick } };
+    assert.equal((orientUniverse(observation).derived as { identity: { liveOrArchived: string } }).identity.liveOrArchived, "archived");
+    const observers = new ObserverStore(path.join(value.root, "observers")); await observers.markObserved("machine-a", identity.seed, 20_000);
+    assert.equal((await observers.get("machine-a")).lastOrientationTickBySeed[identity.seed], 20_000);
+  } finally { await value.close(); }
+});
+
 test("history and memory HTTP routes query persisted bridge observations", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "protouniverse-api-"));
   process.env.PROTOUNIVERSE_MEMORY_ROOT = root;
@@ -148,7 +208,7 @@ test("history and memory HTTP routes query persisted bridge observations", async
       socket.addEventListener("open", () => {
         socket.send(JSON.stringify({ type: "heartbeat", ...identity, currentTick: 150, entityCount: 0 }));
         socket.send(JSON.stringify({ type: "snapshot", interfaceVersion: identity.interfaceVersion,
-          snapshot: { ...snapshot(150), recentOccurrences: [event(7, 100, "reproduction", { entityId: 4 }),
+          snapshot: { ...richSnapshot(150), recentOccurrences: [event(7, 100, "reproduction", { entityId: 2 }),
             event(8, 110, "relationship-formed", { relationshipId: "api-other" }),
             event(9, 120, "rupture", { relationshipId: "api-r" })] } }));
         setTimeout(() => { socket.close(); resolve(); }, 100);
@@ -172,6 +232,16 @@ test("history and memory HTTP routes query persisted bridge observations", async
     const checkpoints = await (await fetch("http://127.0.0.1:18787/api/checkpoints")).json() as { results: unknown[] };
     assert.equal(checkpoints.results.length, 1);
     assert.equal((await fetch("http://127.0.0.1:18787/api/checkpoint/nearest/140")).status, 200);
+    const orient = await (await fetch("http://127.0.0.1:18787/api/perception/orient")).json() as { perceptionSchemaVersion: string; source: { mode: string } };
+    assert.equal(orient.perceptionSchemaVersion, "protouniverse-perception/1"); assert.equal(orient.source.mode, "live");
+    assert.equal((await fetch("http://127.0.0.1:18787/api/perception/inspect?kind=entity&id=2&depth=2")).status, 200);
+    assert.equal((await fetch("http://127.0.0.1:18787/api/perception/inspect?kind=unknown")).status, 400);
+    assert.equal((await fetch("http://127.0.0.1:18787/api/perception/orient?seed=missing")).status, 404);
+    const marked = await fetch("http://127.0.0.1:18787/api/perception/mark-observed", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ observer: "integration-machine", seed: identity.seed, tick: 120 }) });
+    assert.equal(marked.status, 200);
+    const sinceLast = await (await fetch("http://127.0.0.1:18787/api/perception/since-last?observer=integration-machine&seed=test-seed")).json() as { previouslyObserved: boolean };
+    assert.equal(sinceLast.previouslyObserved, true);
     assert.equal((await fetch("http://127.0.0.1:18787/api/history?sinceTick=bad")).status, 400);
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
