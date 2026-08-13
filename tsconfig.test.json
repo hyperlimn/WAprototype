@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "outDir": ".test-dist",
+    "rootDir": "."
+  },
+  "include": ["tests", "server", "src/query", "src/memory"]
+}

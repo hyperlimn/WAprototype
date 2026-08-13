@@ -16,6 +16,9 @@ const occurrences = document.querySelector<HTMLElement>("#occurrences")!;
 const copyStatus = document.querySelector<HTMLElement>("#copyStatus")!;
 const bridgeConnection = document.querySelector<HTMLElement>("#bridgeConnection")!;
 const bridgeLastPublish = document.querySelector<HTMLElement>("#bridgeLastPublish")!;
+const memoryMode = document.querySelector<HTMLElement>("#memoryMode")!;
+const memoryEvents = document.querySelector<HTMLElement>("#memoryEvents")!;
+const memoryLatest = document.querySelector<HTMLElement>("#memoryLatest")!;
 document.querySelector<HTMLElement>("#simulationVersion")!.textContent = SIMULATION_VERSION;
 const camera = new Camera();
 const renderer = new Renderer(canvas, camera);
@@ -192,5 +195,15 @@ window.setInterval(() => {
   bridgeLastPublish.textContent = bridgeStatus.lastPublishAt === null
     ? "never" : `${((performance.now() - bridgeStatus.lastPublishAt) / 1000).toFixed(1)}s`;
 }, 250);
+window.setInterval(async () => {
+  try {
+    const response = await fetch("http://127.0.0.1:8787/api/memory/status");
+    if (!response.ok) return;
+    const status = await response.json() as { mode: string; persistedEventCount: number; latestPersistedTick: number | null };
+    memoryMode.textContent = status.mode;
+    memoryEvents.textContent = status.persistedEventCount.toLocaleString();
+    memoryLatest.textContent = status.latestPersistedTick === null ? "none" : `tick ${status.latestPersistedTick.toLocaleString()}`;
+  } catch { memoryMode.textContent = "unavailable"; }
+}, 2_000);
 simulationPump();
 requestAnimationFrame(frame);

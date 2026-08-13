@@ -171,7 +171,35 @@ Anything meaningfully observable by the human interface should have a machine-re
 
 Run `npm.cmd run dev` to start Vite and the bridge together, or `npm.cmd run dev:app` and `npm.cmd run dev:bridge` separately. The bridge binds to `127.0.0.1:8787` by default. Explicit future configuration may change `PROTOUNIVERSE_BRIDGE_HOST` and `PROTOUNIVERSE_BRIDGE_PORT`; no remote exposure happens automatically.
 
-The browser publishes a heartbeat every 1 second, a canonical snapshot every 5 seconds, and newly observed occurrences in bounded batches. These are wall-clock observation timers only. The bridge retains at most 1,000 events in memory and exposes read-only `/api`, `/api/status`, `/api/state`, `/api/events`, `/api/entity/:id`, and `/api/relationship/:id` routes under interface schema `protouniverse-machine-interface/1`.
+The browser publishes a heartbeat every 1 second, a canonical snapshot every 5 seconds, and newly observed occurrences in bounded batches. These are wall-clock observation timers only. The bridge retains at most 1,000 recent events in RAM while the persistent memory archive records accepted occurrences independently. Current-state and historical routes use machine interface schema `protouniverse-machine-interface/4`.
+
+### Persistent universe memory
+
+Memory records the universe; memory does not govern the universe. The bridge writes transparent filesystem archives beneath `data/universes/<seed>/` using memory schema `protouniverse-memory/1`. Each universe has an atomic manifest, bounded append-only JSONL event segments, observational checkpoints, and optional condensed era summaries. Memory never calls simulation methods and wall-clock archive metadata never enters simulation behavior.
+
+Complete mode is the default and retains every accepted machine-observable occurrence. Set `PROTOUNIVERSE_MEMORY_MODE=condensed` to additionally create deterministic summaries for eras older than the recent-detail window. Condensation is non-destructive: original event segments and checkpoints remain the fossil record, and every era summary names its exact source segments and checkpoint references. The universe may forget operational detail in condensed views, but the archive remains its fossil record.
+
+Checkpoints are selected by simulation-tick boundaries, defaulting to every 25,000 ticks through `PROTOUNIVERSE_CHECKPOINT_INTERVAL_TICKS`. Because the browser publishes periodically, the stored checkpoint tick is the first observed canonical snapshot in a newly crossed interval. These checkpoints support historical inquiry only; they are not simulation resume state.
+
+Configuration:
+
+- `PROTOUNIVERSE_MEMORY_ROOT` — storage root, default `data`
+- `PROTOUNIVERSE_MEMORY_MODE` — `complete` or `condensed`
+- `PROTOUNIVERSE_EVENT_SEGMENT_SIZE` — events per JSONL segment, default 10,000
+- `PROTOUNIVERSE_CHECKPOINT_INTERVAL_TICKS` — default 25,000
+- `PROTOUNIVERSE_RECENT_DETAIL_TICKS` — condensed-mode full-detail window, default 100,000
+- `PROTOUNIVERSE_CONDENSED_ERA_TICKS` — condensed era size, default 100,000
+
+Historical API:
+
+- `GET /api/universes` and `GET /api/universe/:seed` discover and orient within archived universes.
+- `GET /api/history?seed&sinceTick&untilTick&type&entityId&relationshipId&limit&cursor` returns stable newest-first pages. Cursors are opaque and bound to their seed and filters.
+- `GET /api/history/summary?seed&sinceTick&untilTick`
+- `GET /api/history/entity/:id?seed&limit&cursor` and `GET /api/history/relationship/:id?seed&limit&cursor`
+- `GET /api/checkpoints?seed&sinceTick&untilTick&limit`, `GET /api/checkpoint/:tick?seed`, and `GET /api/checkpoint/nearest/:tick?seed&direction=before|after|nearest`
+- `GET /api/memory/status?seed`
+
+When `seed` is omitted, historical routes resolve the currently active bridge universe. An explicit unknown seed returns `404` and is never replaced by another archive. Archive navigation selects history; it does not alter history.
 
 - Distribution and lifetime of bonds, not just the active count.
 - Relationship values within persistent groups compared with the population baseline.
