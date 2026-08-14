@@ -215,7 +215,121 @@ Machine perception is an instrument, not a law of the universe. Perception schem
 - `GET /api/perception/since-last?observer&seed` reports changes since an observer bookmark.
 - `POST /api/perception/mark-observed` with `{ observer, seed, tick }` writes only lightweight metadata beneath `data/observers/`.
 
+### Observer Memory v1
+
+Universe memory answers “what happened in this universe?” Observer memory answers “what happened between this observer and this universe?” It is a separate, provider-neutral notebook scoped by explicit observer and universe identities. Files live beneath `data/observer-memory/<observer>/universes/<encoded-universe>.json` using schema `protouniverse-observer-memory/1`; writes use atomic replacement and survive bridge or MCP restarts.
+
+Entries may be `observation`, `investigation`, `question`, `hypothesis`, `prediction`, `revisit`, `conclusion`, or `surprise`. Every entry has an `open`, `resolved`, or `superseded` lifecycle, timestamps, revision provenance, optional tags and universe tick, and optional references to entities, relationships, events, checkpoints, regions, history queries, or stable URIs. References may be labeled `supports`, `contradicts`, `context`, or `target`.
+
+The epistemic boundary is explicit in every entry: `authority` is `observer-authored`, `authoritativeUniverseTruth` is always `false`, and `classification` is `observer-record`. A notebook entry can reference authoritative evidence, but that does not promote its interpretation, hypothesis, prediction, question, or conclusion into universe fact.
+
+Observer-memory HTTP faculties:
+
+- `GET /api/observer-memory?observer&universe&kind&status&limit` recalls a notebook, with optional filters.
+- `POST /api/observer-memory` creates an entry from `{ observer, universe, kind, content, universeTick?, tags?, references? }`.
+- `PATCH /api/observer-memory/:id` revises or resolves an entry using `{ observer, universe, content?, status?, resolution?, references?, note? }`.
+- `GET /api/perception/orient?seed&observer` includes at most five recent open investigations, questions, hypotheses, predictions, or revisit intentions under `observerContinuity`, then records that visit. Omitting `observer` remains read-only and produces the original orientation shape.
+
+The continuity digest reports the previous visit time/tick, visit count, open inquiry count, and a compact `whereYouLeftOff` list. Use dedicated recall for the full notebook. Observer memory never writes universe archives and never changes Universe 0 behavior.
+
 Attention suggestions transparently combine anomaly, connectivity, persistence, recent activity, and structural extremity. All analyses are bounded and reconstructable; none calls the live `Universe`, steps it, or requests a snapshot.
+
+### MCP machine doorway
+
+MCP is a doorway into ProtoUniverse, not the intelligence of ProtoUniverse. The local server uses MCP specification `2026-07-28`, MCP identity `protouniverse-mcp/1`, and the official TypeScript SDK v2 split packages. It serves STDIO with the v2 `serveStdio` entry so modern clients negotiate the 2026 protocol while retaining SDK-managed legacy compatibility. STDOUT is reserved exclusively for protocol messages; diagnostics go to STDERR. Start the bridge with `npm.cmd run dev:bridge`, then start MCP with:
+
+```powershell
+npm.cmd run mcp
+```
+
+The adapter exposes `orient`, `inspect`, `context`, `anomalies`, `similar`, `compare`, `changes`, `since_last`, `mark_observed`, `recall_observer_memory`, `remember`, `update_observer_memory`, `list_universes`, `history`, `checkpoints`, and `checkpoint`. Observer-memory writes and `mark_observed` are non-destructive and write observer-owned metadata only. Supplying an observer to `orient` records a notebook visit; without one it remains a pure perception read. `explore-universe` and `resume-observer` are optional navigation prompts. Structured results preserve authoritative, derived, inferred, and observer-authored labels; concise text and resource links provide compatibility and navigation.
+
+Resources use stable URIs:
+
+```text
+protouniverse://universe/<seed>
+protouniverse://universe/<seed>/entity/<id>
+protouniverse://universe/<seed>/relationship/<encoded-id>
+protouniverse://universe/<seed>/checkpoint/<tick>
+protouniverse://universe/<seed>/event/<tick>/<sequence>
+protouniverse://universe/<seed>/region/<x>/<y>/<radius>
+protouniverse://observer/<observer>
+```
+
+The observer carries identity; the connection does not. Observer handles remain explicit tool arguments. Legacy since-last bookmarks survive reconnects through `data/observers/`; Observer Memory v1 notebooks survive through `data/observer-memory/`. The MCP process normally uses the localhost bridge at `http://127.0.0.1:8787`; set `PROTOUNIVERSE_BRIDGE_URL` to another localhost bridge. Archive discovery, history, checkpoints, archived orientation/inspection, and observer-memory reads/writes have direct filesystem fallback when the bridge is offline.
+
+From this repository directory, connect local Codex with:
+
+```powershell
+codex mcp add protouniverse -- npm.cmd run mcp
+```
+
+For a location-independent command, use `npm.cmd --prefix C:\absolute\path\to\WAprototype run mcp` and set `PROTOUNIVERSE_MEMORY_ROOT` to the repository's absolute `data` directory using `codex mcp add --env`. An equivalent optional project `.codex/config.toml` entry is:
+
+```toml
+[mcp_servers.protouniverse]
+command = "npm.cmd"
+args = ["run", "mcp"]
+```
+
+Run the automated SDK client integration through `npm.cmd test`. To inspect interactively without adding a production dependency:
+
+```powershell
+npx.cmd @modelcontextprotocol/inspector npm.cmd run mcp
+```
+
+### Recurring machine observer
+
+The local observer loop launches a fresh, non-interactive Codex expedition after each completed wait. It does not start, stop, or restart the app, bridge, universe, or MCP server. Start the app and bridge first (together with `npm run dev`, or separately in two terminals with `npm run dev:app` and `npm run dev:bridge`). The globally registered `protouniverse` MCP server is loaded by each Codex process.
+
+Run `codex-first-entry` every five minutes:
+
+```powershell
+npm run observer:loop
+```
+
+Run exactly one expedition for testing:
+
+```powershell
+npm run observer:once
+```
+
+Change the observer or completed-cycle delay by passing arguments after `--`:
+
+```powershell
+npm run observer:loop -- --observer codex-first-entry --interval 300
+npm run observer:once -- --observer another-observer
+```
+
+Options include `--max-cycles <count>`, `--expedition-timeout <seconds>`, `--model <model>`, `--search enabled|disabled`, `--working-directory <path>`, `--prompt-file <path>`, and `--max-logs <count>`. Search is disabled by default. A custom prompt may use `{{observer}}` as an identity placeholder. Run `npm run observer:loop -- --help` for the complete list.
+
+Press Ctrl+C to stop. If an expedition is running, the loop terminates its owned Codex process tree; if it is waiting, the wait is cancelled. Cycles never overlap, and the interval begins only after the prior expedition exits or is terminated. Each expedition has a one-hour maximum runtime by default; configure it with `--expedition-timeout <seconds>`. A timeout, failed Codex, or unavailable-MCP expedition is logged and retried at the next cycle rather than killing the loop.
+
+Operational logs live under `data/observer-runs/<observer>/` as a text transcript plus JSON metadata for each cycle. The default retention is 100 cycles. These files describe loop execution only: they are not universe events, authoritative state, or Observer Memory. Observer Memory remains the observer-authored notebook managed by ProtoUniverse.
+
+The loop provides recurrence. Observer Memory provides continuity. The universe provides the curriculum.
+
+### ProtoUniverse Laboratory v1.1 — Close the Curtain
+
+**Experiments alter the observer's conditions of access, not the universe.** The Laboratory is a separate observational adapter between the authoritative machine interface and an experimental MCP client. It never changes Universe 0, simulation laws, canonical snapshots, archives, or deterministic behavior.
+
+**The Veil restricts access honestly. It never fabricates reality.** A profile can permit, filter, or deny historical ranges, current state, checkpoints, events, entity and relationship inspection, ancestry, coordinates, energy, relationship metrics, regions, similarity, anomaly detection, comparisons, Observer Memory, and bookmarks. Denials describe information as inaccessible under the active observation profile; they do not claim that hidden data is absent or that the universe began at a boundary.
+
+Experiment definitions are versioned JSON files in `data/laboratory/experiments/`. Multiple definitions can target the same universe with different observers and Veil profiles. The separate `protouniverse-lab` MCP process is started for exactly one experiment, forces that experiment's universe, filters both tool results and resource reads, and has no mutation, filesystem, shell, or HTTP-proxy faculty. The normal `protouniverse` MCP remains unrestricted and unchanged.
+
+The included `archaeology-001` definition targets `U0-000001` as fresh observer `lab-archaeology-001-a`. Present entities, relationships, spatial state, and enabled analyses remain visible. History, events, and checkpoints before tick 250000 are inaccessible. History/list queries are clamped to the boundary; direct pre-boundary and comparison requests are rejected honestly. Observer Memory and legacy bookmarks are absent from the lab MCP tool/resource inventory, and `orient` receives no inherited continuity. Its minimal-disclosure profile omits experiment/profile metadata from results. The observer-facing expedition prompt does not disclose the cutoff, Veil, Laboratory status, or hypothesis.
+
+Run the experiment against an already running bridge:
+
+```powershell
+npm run lab:once -- --experiment archaeology-001
+```
+
+The runner uses Codex's `--ignore-user-config` boundary, registers only the experiment-specific lab MCP, disables shell/snapshot, apps, browser/computer-use, image/view, plugin/skill, agent, hook, and proxy features, omits web search, and uses read-only/no-approval sandbox settings as defense in depth. Codex's capability host remains enabled solely to route the explicitly configured MCP tools; its shell and unified-exec backends remain disabled. Codex starts in a newly created empty temporary directory; only the MCP subprocess receives the real repository as its private working directory. The stage is removed after exit. Transcripts and unscored operational metadata are written beneath `data/laboratory/runs/<experiment-id>/`; metadata includes experiment, observer, universe, profile, prompt and interface versions, entry tick when reachable, simulation version when reachable, timestamps, command, isolation claims, cleanup status, exit status, and timeout state.
+
+Manual classifications are separate sidecars beneath `data/laboratory/run-classifications/`, so scientific run transcripts and metadata remain unmodified. The original archaeology first-contact run is retained and classified as contaminated because it accessed backstage filesystem information.
+
+Leakage controls remove pre-cutoff event/checkpoint objects and links plus obvious current-record historical fields such as birth/creation ticks, ages, origin, ancestry, historical summaries, archive start/count metadata, and age-derived feature labels. This is controlled epistemic access, not cryptographic secrecy: the present configuration may still permit qualitative inference from current population structure, identifiers/fingerprints, relationship topology, spatial arrangement, energy, and the ranking produced by permitted derived analyses. Future profiles can add sensory apertures, resolution lenses, blind comparison, prediction chambers, amnesiac or generational observers, communication chambers, event triggers, and counterfactual forks without changing authoritative domain logic.
 
 - Distribution and lifetime of bonds, not just the active count.
 - Relationship values within persistent groups compared with the population baseline.

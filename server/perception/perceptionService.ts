@@ -13,12 +13,13 @@ import { findSimilarEntity, findSimilarRelationship, findSimilarRegions } from "
 import { compareEntities, compareRegions, compareRelationships, compareUniverses } from "../../src/perception/comparison.js";
 import { queryRegion } from "../../src/query/spatialQueries.js";
 import { ObserverStore } from "./observerStore.js";
+import type { ObserverMemoryStore } from "../observer-memory/observerMemoryStore.js";
 
 export class PerceptionResourceNotFoundError extends Error { constructor(readonly resource: string, readonly id: string) { super(`${resource} ${id} was not found`); } }
 
 export class PerceptionService {
   readonly observers: ObserverStore;
-  constructor(readonly state: StateStore, readonly memory: MemoryStore) {
+  constructor(readonly state: StateStore, readonly memory: MemoryStore, readonly observerMemory?: ObserverMemoryStore) {
     this.observers = new ObserverStore(path.join(memory.root, "observers"));
   }
 
@@ -43,7 +44,13 @@ export class PerceptionService {
       events: history.results, memoryRange: { firstTick: archive.manifest.firstTick, latestTick: archive.manifest.latestTick } } };
   }
 
-  async orient(seed?: string): Promise<unknown> { return orientUniverse((await this.observe(seed)).observation); }
+  async orient(seed?: string, observer?: string): Promise<unknown> {
+    const observation = (await this.observe(seed)).observation, orientation: Record<string, unknown> = { ...orientUniverse(observation) };
+    if (!observer || !this.observerMemory) return orientation;
+    orientation.observerContinuity = await this.observerMemory.continuity(observer, observation.source.seed);
+    await this.observerMemory.visit(observer, observation.source.seed, observation.source.tick);
+    return orientation;
+  }
 
   async inspect(seed: string | undefined, target: InspectionTarget, depth: number): Promise<Record<string, unknown>> {
     const selected = await this.observe(seed, target.kind === "checkpoint" ? target.tick : undefined);

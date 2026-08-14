@@ -1,0 +1,2 @@
+export const MCP_VERSION = "protouniverse-mcp/1";
+export const MCP_INSTRUCTIONS = "You are entering ProtoUniverse, a deterministic evolving simulation. Begin unfamiliar investigations with orient. Treat simulation state as authoritative, perception as derived or inferred, and observer memory as non-authoritative observer-authored notes. Prefer orient → inspect/context → history/similarity/compare, but follow evidence freely. Do not infer causation from change data. Observer memory affects only the observer's notebook, never the universe.";

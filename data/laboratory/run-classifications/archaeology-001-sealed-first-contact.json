@@ -1,0 +1,9 @@
+{
+  "recordType": "protouniverse-laboratory-run-classification/1",
+  "experimentId": "archaeology-001",
+  "runId": "run-2026-08-14T03-46-03.234Z",
+  "classification": "sealed-successful-first-contact",
+  "reason": "observer accessed ProtoUniverse through the intended laboratory MCP faculties with sealed-capability-set/1 isolation",
+  "automaticScientificScore": null,
+  "sourceRunModified": false
+}

@@ -12,17 +12,21 @@ import { handleMemoryRoute } from "./memory/memoryRoutes.js";
 import { ArchiveNotFoundError } from "./memory/archiveSelection.js";
 import { PerceptionService, PerceptionResourceNotFoundError } from "./perception/perceptionService.js";
 import { handleMarkObserved, handlePerceptionRoute } from "./perception/perceptionRoutes.js";
+import { ObserverMemoryStore, ObserverMemoryNotFoundError } from "./observer-memory/observerMemoryStore.js";
+import { handleObserverMemoryRoute } from "./observer-memory/observerMemoryRoutes.js";
+import { ObserverMemoryValidationError } from "./observer-memory/observerMemoryValidation.js";
 
 const HOST = process.env.PROTOUNIVERSE_BRIDGE_HOST ?? "127.0.0.1";
 const PORT = Number(process.env.PROTOUNIVERSE_BRIDGE_PORT ?? 8787);
 const store = new StateStore();
 const memory = new MemoryStore(path.resolve(process.env.PROTOUNIVERSE_MEMORY_ROOT ?? "data"), memoryPolicyFromEnvironment());
-const perception = new PerceptionService(store, memory);
+const observerMemory = new ObserverMemoryStore(path.join(memory.root, "observer-memory"));
+const perception = new PerceptionService(store, memory, observerMemory);
 let browserConnected = false;
 
 const json = (response: ServerResponse, status: number, body: unknown): void => {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Cache-Control": "no-store" });
+    "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS", "Cache-Control": "no-store" });
   response.end(JSON.stringify(body));
 };
 const notFound = (response: ServerResponse, resource: string, id?: string): void =>
@@ -32,6 +36,7 @@ const snapshotUnavailable = (response: ServerResponse): void => json(response, 5
 const handleRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
   if (request.method === "OPTIONS") return json(response, 204, null);
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? `${HOST}:${PORT}`}`);
+  if (await handleObserverMemoryRoute(request, url, response, observerMemory, json)) return;
   if (request.method === "POST" && url.pathname === "/api/perception/mark-observed") return handleMarkObserved(request, response, perception, json);
   if (request.method !== "GET") return json(response, 405, { error: "method_not_allowed" });
   if (url.pathname === "/api") return json(response, 200, {
@@ -49,7 +54,10 @@ const handleRequest = async (request: IncomingMessage, response: ServerResponse)
       historySummary: "GET /api/history/summary?seed&sinceTick&untilTick", checkpoints: "GET /api/checkpoints?seed&sinceTick&untilTick&limit",
       checkpoint: "GET /api/checkpoint/:tick?seed", nearestCheckpoint: "GET /api/checkpoint/nearest/:tick?seed&direction=before|after|nearest",
       memoryStatus: "GET /api/memory/status?seed",
-      perceptionOrient: "GET /api/perception/orient?seed",
+      perceptionOrient: "GET /api/perception/orient?seed&observer",
+      observerMemoryRecall: "GET /api/observer-memory?observer&universe&kind&status&limit",
+      observerMemoryRemember: "POST /api/observer-memory { observer, universe, kind, content, universeTick?, tags?, references? }",
+      observerMemoryUpdate: "PATCH /api/observer-memory/:id { observer, universe, content?, status?, resolution?, references?, note? }",
       perceptionInspect: "GET /api/perception/inspect?seed&kind&depth&id|x&y&radius|tick&sequence",
       perceptionContext: "GET /api/perception/context?seed&kind&...target",
       perceptionChanges: "GET /api/perception/changes?seed&sinceTick|checkpoint|compareSeed&tick",
@@ -100,6 +108,10 @@ export const server = createServer((request, response) => {
       json(response, 404, { error: "not_found", resource: "universe", seed: error.seed, message: error.message });
     } else if (error instanceof PerceptionResourceNotFoundError) {
       json(response, 404, { error: "not_found", resource: error.resource, id: error.id, message: error.message });
+    } else if (error instanceof ObserverMemoryValidationError) {
+      json(response, 400, { error: "invalid_observer_memory", parameter: error.parameter, value: error.value, message: error.message });
+    } else if (error instanceof ObserverMemoryNotFoundError) {
+      json(response, 404, { error: "not_found", resource: "observer-memory", message: error.message });
     } else {
       console.error(error);
       json(response, 500, { error: "internal_error" });

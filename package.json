@@ -7,7 +7,12 @@
     "dev": "concurrently -n app,bridge \"npm:dev:app\" \"npm:dev:bridge\"",
     "dev:app": "vite",
     "dev:bridge": "tsx server/index.ts",
-    "test": "tsc -p tsconfig.test.json && node .test-dist/tests/memory.test.js && node scripts/clean-test-build.mjs",
+    "mcp": "tsx server/mcp/index.ts",
+    "lab:mcp": "tsx server/laboratory/mcpIndex.ts",
+    "lab:once": "tsx scripts/lab-once.mjs",
+    "observer:loop": "node scripts/observer-loop.mjs",
+    "observer:once": "node scripts/observer-loop.mjs --once",
+    "test": "tsc -p tsconfig.test.json && node .test-dist/tests/memory.test.js && node .test-dist/tests/observerMemory.test.js && node .test-dist/tests/mcp.integration.test.js && node .test-dist/tests/laboratory.test.js && node tests/observerLoop.test.mjs && node scripts/clean-test-build.mjs",
     "build": "tsc && tsc -p tsconfig.server.json && vite build",
     "preview": "vite preview"
   },
@@ -17,5 +22,10 @@
     "tsx": "^4.23.0",
     "typescript": "^5.7.2",
     "vite": "^6.0.5"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "zod": "^4.4.3"
   }
 }

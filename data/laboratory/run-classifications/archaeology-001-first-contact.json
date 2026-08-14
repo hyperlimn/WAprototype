@@ -1,0 +1,9 @@
+{
+  "recordType": "protouniverse-laboratory-run-classification/1",
+  "experimentId": "archaeology-001",
+  "runId": "run-2026-08-14T03-20-21.457Z",
+  "classification": "contaminated",
+  "reason": "observer accessed backstage repository/filesystem information",
+  "automaticScientificScore": null,
+  "sourceRunModified": false
+}

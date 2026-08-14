@@ -23,7 +23,7 @@ export const isPerceptionPath = (pathname: string): boolean => pathname.startsWi
 export async function handlePerceptionRoute(url: URL, response: ServerResponse, service: PerceptionService, json: JsonWriter): Promise<boolean> {
   if (!isPerceptionPath(url.pathname)) return false;
   const seed = optionalString(url, "seed");
-  if (url.pathname === "/api/perception/orient") { json(response, 200, await service.orient(seed)); return true; }
+  if (url.pathname === "/api/perception/orient") { json(response, 200, await service.orient(seed, optionalString(url, "observer"))); return true; }
   if (url.pathname === "/api/perception/inspect") {
     const depth = optionalNumber(url, "depth", { integer: true, min: 1, max: PERCEPTION_LIMITS.maximumDepth }) ?? 1;
     json(response, 200, await service.inspect(seed, target(url), depth)); return true;

@@ -3,5 +3,11 @@ dist/
 *.log
 .tmp-run/
 .test-dist/
-data/
+data/*
+!data/laboratory/
+data/laboratory/*
+!data/laboratory/experiments/
+!data/laboratory/experiments/*.json
+!data/laboratory/run-classifications/
+!data/laboratory/run-classifications/*.json
 *.tmp

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "protouniverse-laboratory-experiment/1",
+  "id": "archaeology-001",
+  "revision": "archaeology-001/1",
+  "universe": "U0-000001",
+  "observer": "lab-archaeology-001-a",
+  "promptVersion": "archaeology-first-contact/1",
+  "description": "Fresh contact with the present universe and a bounded accessible historical window.",
+  "profile": {
+    "version": "protouniverse-veil/1",
+    "history": { "enabled": true, "minimumAccessibleTick": 250000 },
+    "currentState": true,
+    "checkpoints": true,
+    "events": true,
+    "entities": true,
+    "relationships": true,
+    "ancestry": false,
+    "coordinates": true,
+    "energy": true,
+    "relationshipMetrics": true,
+    "regions": true,
+    "similarity": true,
+    "anomalyDetection": true,
+    "comparison": true,
+    "observerMemory": false,
+    "bookmarks": false,
+    "discloseExperimentalContext": false
+  }
+}
