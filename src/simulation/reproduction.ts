@@ -107,17 +107,22 @@ interface BirthRequest {
 
 export class ReproductionSystem {
   private readonly birthTicks: number[] = [];
+  private readonly parameterCache = new WeakMap<RelationshipEntity, ReproductionParameters>();
 
   continuationState(): number[] { return [...this.birthTicks]; }
   restoreContinuationState(ticks: number[]): void { this.birthTicks.splice(0, this.birthTicks.length, ...ticks); }
 
-  update(entities: Entity[], relationships: RelationshipEntity[], state: WorldState): Entity[] {
+  update(entities: Entity[], relationships: RelationshipEntity[], state: WorldState, orderedRelationships?: readonly RelationshipEntity[]): Entity[] {
     const requests: BirthRequest[] = [];
-    const ordered = [...relationships].sort((a, b) => a.id.localeCompare(b.id));
+    const ordered = orderedRelationships ?? [...relationships].sort((a, b) => a.id.localeCompare(b.id));
     for (const relationship of ordered) {
       const parentA = entities[relationship.parentAId];
       const parentB = entities[relationship.parentBId];
-      const parameters = reproductionParameters(parentA, parentB, relationship);
+      let parameters = this.parameterCache.get(relationship);
+      if (!parameters) {
+        parameters = reproductionParameters(parentA, parentB, relationship);
+        this.parameterCache.set(relationship, parameters);
+      }
       const ageTick = relationship.creationTick + parameters.minimumAge;
       const cooldownTick = relationship.lastReproductionTick === null
         ? ageTick : relationship.lastReproductionTick + parameters.cooldown;
@@ -137,7 +142,7 @@ export class ReproductionSystem {
       request.relationship.reproductionCount++;
       request.relationship.lastReproductionTick = state.ticks;
       request.relationship.nextEligibleTick = state.ticks
-        + reproductionParameters(request.parentA, request.parentB, request.relationship).cooldown;
+        + this.parameterCache.get(request.relationship)!.cooldown;
       request.relationship.reproductionEligible = false;
       this.birthTicks.push(state.ticks);
     }
@@ -145,9 +150,9 @@ export class ReproductionSystem {
       for (const relationship of ordered) relationship.reproductionEligible = false;
     }
     while (this.birthTicks.length && this.birthTicks[0] < state.ticks - 9_999) this.birthTicks.shift();
-    state.eligibleReproductiveRelationships = ordered.filter(
-      (relationship) => relationship.reproductionEligible,
-    ).length;
+    let eligible = 0;
+    for (const relationship of ordered) if (relationship.reproductionEligible) eligible++;
+    state.eligibleReproductiveRelationships = eligible;
     state.birthsLast10000Ticks = this.birthTicks.length;
     return births;
   }

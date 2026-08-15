@@ -15,6 +15,7 @@ import { RuptureSystem } from "./rupture";
 import { SAVE_STATE_SCHEMA_VERSION, validateContinuation, type RuntimeProvenance, type UniverseContinuationState } from "./saveState";
 import { orderedBonds, orderedRelationships } from "./deterministicOrdering";
 import { SimulationProfiler } from "./simulationProfiler";
+import { RelationshipTickWorkspace } from "./relationshipTickWorkspace";
 
 export const SIMULATION_VERSION = "u0.6";
 export const INITIAL_ENTITY_COUNT = 20;
@@ -36,6 +37,7 @@ export class Universe {
   readonly rupture = new RuptureSystem();
   /** Observer-only rolling timings. Never serialized into authoritative state. */
   readonly profiler = new SimulationProfiler();
+  private readonly relationshipWorkspace = new RelationshipTickWorkspace();
   private readonly random: SeededRandom;
   readonly runtime: RuntimeProvenance;
   readonly state: WorldState = {
@@ -126,13 +128,14 @@ export class Universe {
     }
     this.profiler.record("clock-and-external-arrivals", phaseStarted);
     phaseStarted = this.profiler.clock();
-    const previousRelationships = new Map([...this.relationshipLayer.entities].map(([id, entity]) => [id, {
-      entity, spatialActive: entity.spatialActive, influenceActive: entity.influenceActive,
-    }]));
+    this.relationshipWorkspace.sync(this.relationshipLayer);
+    const previousRelationships = this.relationshipWorkspace.all;
+    this.relationshipWorkspace.captureDimensionFlags();
     this.relationshipLayer.update(this.entities, this.bonds, this.state.ticks);
-    const relationships = [...this.relationshipLayer.entities.values()];
+    this.relationshipWorkspace.sync(this.relationshipLayer);
+    const relationships = this.relationshipWorkspace.all;
     for (const relationship of relationships) {
-      if (previousRelationships.has(relationship.id)) continue;
+      if (this.relationshipWorkspace.previousDimensionFlags.has(relationship)) continue;
       this.state.relationshipsCreated++;
       this.occurrences.add({
         tick: this.state.ticks, type: "relationship-formed",
@@ -142,30 +145,32 @@ export class Universe {
         x: relationship.x, y: relationship.y,
       });
     }
-    for (const [id, previous] of previousRelationships) {
+    for (const previous of previousRelationships) {
+      const id = previous.id;
       if (this.relationshipLayer.entities.has(id)) continue;
       this.state.relationshipsDestroyed++;
       this.occurrences.add({
         tick: this.state.ticks, type: "relationship-destroyed",
         description: `relationship destroyed — ${id}`,
         relationshipId: id,
-        parentEntityIds: [previous.entity.parentAId, previous.entity.parentBId],
-        x: previous.entity.x, y: previous.entity.y,
+        parentEntityIds: [previous.parentAId, previous.parentBId],
+        x: previous.x, y: previous.y,
       });
     }
     this.profiler.record("relationship-lifecycle", phaseStarted);
     phaseStarted = this.profiler.clock();
     this.dimensionalState.update(relationships);
+    this.relationshipWorkspace.classify();
     this.profiler.record("dimensional-state", phaseStarted);
     phaseStarted = this.profiler.clock();
-    this.rupture.update(relationships, this.entities, this.bonds, this.state, this.occurrences);
+    this.rupture.update(relationships, this.entities, this.bonds, this.state, this.occurrences, this.relationshipWorkspace.ruptureOrdered);
     this.profiler.record("rupture", phaseStarted);
     phaseStarted = this.profiler.clock();
     for (const relationship of relationships) {
-      const previous = previousRelationships.get(relationship.id);
-      if (!previous) continue;
+      const previousFlags = this.relationshipWorkspace.previousDimensionFlags.get(relationship);
+      if (previousFlags === undefined) continue;
       const transition = this.dimensionalTransition(
-        previous.spatialActive, previous.influenceActive,
+        (previousFlags & 1) !== 0, (previousFlags & 2) !== 0,
         relationship.spatialActive, relationship.influenceActive,
       );
       if (!transition) continue;
@@ -180,19 +185,19 @@ export class Universe {
     }
     this.profiler.record("dimensional-transition-events", phaseStarted);
     phaseStarted = this.profiler.clock();
-    this.influencePhysics.update(relationships);
+    this.influencePhysics.update(relationships, this.relationshipWorkspace.spatial, this.relationshipWorkspace.influential);
     this.profiler.record("influence-physics", phaseStarted);
     phaseStarted = this.profiler.clock();
-    this.relationshipField.update(relationships, this.entities, dt);
+    this.relationshipField.update(relationships, this.entities, dt, this.relationshipWorkspace.spatial);
     this.profiler.record("relationship-field", phaseStarted);
     phaseStarted = this.profiler.clock();
-    this.higherOrderPhysics.step(relationships, this.entities, this.influencePhysics.modulation, dt);
+    this.higherOrderPhysics.step(relationships, this.entities, this.influencePhysics.modulation, dt, this.relationshipWorkspace.spatial);
     this.profiler.record("higher-order-physics", phaseStarted);
     phaseStarted = this.profiler.clock();
-    this.measure();
+    this.measure(this.relationshipWorkspace);
     this.profiler.record("aggregate-measurement", phaseStarted);
     phaseStarted = this.profiler.clock();
-    const births = this.reproduction.update(this.entities, relationships, this.state);
+    const births = this.reproduction.update(this.entities, relationships, this.state, this.relationshipWorkspace.reproductionOrdered);
     if (births.length) {
       this.entities.push(...births);
       this.state.reproductionBirths += births.length;
@@ -211,7 +216,7 @@ export class Universe {
       }
       this.profiler.record("reproduction", phaseStarted);
       phaseStarted = this.profiler.clock();
-      this.measure();
+      this.measure(this.relationshipWorkspace);
       this.profiler.record("post-reproduction-measurement-if-needed", phaseStarted);
     } else {
       this.profiler.record("reproduction", phaseStarted);
@@ -253,7 +258,7 @@ export class Universe {
     };
   }
 
-  private measure(): void {
+  private measure(workspace?: RelationshipTickWorkspace): void {
     let alpha = 0, beta = 0, gamma = 0, speed = 0, density = 0;
     for (const entity of this.entities) {
       alpha += entity.alpha;
@@ -269,36 +274,35 @@ export class Universe {
     this.state.averageSpeed = speed / count;
     this.state.averageLocalDensity = density / count;
     this.state.activeBonds = this.bonds.size;
-    const relationships = [...this.relationshipLayer.entities.values()];
+    const relationships = workspace?.all ?? [...this.relationshipLayer.entities.values()];
     this.state.activeRelationshipEntities = relationships.length;
-    this.state.averageRelationshipAge = relationships.length
-      ? relationships.reduce((sum, entity) => sum + entity.age, 0) / relationships.length : 0;
-    this.state.averageCoherence = relationships.length
-      ? relationships.reduce((sum, entity) => sum + entity.coherence, 0) / relationships.length : 0;
+    let relationshipAge = 0, coherence = 0;
+    for (const relationship of relationships) { relationshipAge += relationship.age; coherence += relationship.coherence; }
+    this.state.averageRelationshipAge = relationships.length ? relationshipAge / relationships.length : 0;
+    this.state.averageCoherence = relationships.length ? coherence / relationships.length : 0;
     this.state.activeHigherOrderInteractions = this.higherOrderPhysics.activeInteractions.length;
-    const spatial = relationships.filter((entity) => entity.spatialActive);
-    const influential = relationships.filter((entity) => entity.influenceActive);
-    const dual = relationships.filter((entity) => entity.spatialActive && entity.influenceActive);
+    const spatial = workspace?.spatial ?? relationships.filter((entity) => entity.spatialActive);
+    const influential = workspace?.influential ?? relationships.filter((entity) => entity.influenceActive);
+    const dual = workspace?.dual ?? relationships.filter((entity) => entity.spatialActive && entity.influenceActive);
     this.state.spatiallyActiveRelationships = spatial.length;
     this.state.influenceActiveRelationships = influential.length;
     this.state.dualActiveRelationships = dual.length;
-    this.state.influenceOnlyRelationships = relationships.filter(
-      (entity) => !entity.spatialActive && entity.influenceActive,
-    ).length;
-    this.state.dormantRelationships = relationships.filter(
-      (entity) => !entity.spatialActive && !entity.influenceActive,
-    ).length;
-    this.state.averageSynergy = dual.length
-      ? dual.reduce((sum, entity) => sum + entity.synergy, 0) / dual.length : 0;
-    this.state.averageFieldPotential = spatial.length
-      ? spatial.reduce((sum, entity) => sum + entity.localFieldPotential, 0) / spatial.length : 0;
-    this.state.maximumFieldPotential = spatial.reduce(
-      (maximum, entity) => Math.max(maximum, entity.localFieldPotential), 0,
-    );
-    this.state.averageFieldGradient = spatial.length
-      ? spatial.reduce((sum, entity) => sum + entity.localFieldGradientMagnitude, 0) / spatial.length : 0;
-    this.state.maximumFieldGradient = spatial.reduce(
-      (maximum, entity) => Math.max(maximum, entity.localFieldGradientMagnitude), 0,
-    );
+    this.state.influenceOnlyRelationships = influential.length - dual.length;
+    this.state.dormantRelationships = workspace?.dormant.length ?? relationships.filter(
+      (entity) => !entity.spatialActive && !entity.influenceActive).length;
+    let synergy = 0;
+    for (const entity of dual) synergy += entity.synergy;
+    this.state.averageSynergy = dual.length ? synergy / dual.length : 0;
+    let fieldPotential = 0, maximumFieldPotential = 0, fieldGradient = 0, maximumFieldGradient = 0;
+    for (const entity of spatial) {
+      fieldPotential += entity.localFieldPotential;
+      maximumFieldPotential = Math.max(maximumFieldPotential, entity.localFieldPotential);
+      fieldGradient += entity.localFieldGradientMagnitude;
+      maximumFieldGradient = Math.max(maximumFieldGradient, entity.localFieldGradientMagnitude);
+    }
+    this.state.averageFieldPotential = spatial.length ? fieldPotential / spatial.length : 0;
+    this.state.maximumFieldPotential = maximumFieldPotential;
+    this.state.averageFieldGradient = spatial.length ? fieldGradient / spatial.length : 0;
+    this.state.maximumFieldGradient = maximumFieldGradient;
   }
 }

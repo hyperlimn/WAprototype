@@ -43,8 +43,9 @@ export function stepPhysics(
   // A speed-dependent feedback coefficient closes the local → global → local loop.
   const feedback = 1 + Math.min(0.12, world.averageSpeed * 0.045);
   const radiusSq = INTERACTION_RADIUS * INTERACTION_RADIUS;
+  const nearby: Entity[] = [];
   for (const a of entities) {
-    for (const b of spatial.nearby(a)) {
+    for (const b of spatial.nearbyInto(a, nearby)) {
       if (b.creationIndex <= a.creationIndex) continue;
       const dx = b.x - a.x;
       const dy = b.y - a.y;

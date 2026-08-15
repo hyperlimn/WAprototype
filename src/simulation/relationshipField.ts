@@ -24,7 +24,7 @@ export const fieldSourceStrength = (entity: RelationshipEntity): number =>
 export class RelationshipField {
   private readonly cells = new Map<string, RelationshipEntity[]>();
 
-  update(relationships: RelationshipEntity[], baseEntities: Entity[], dt: number): void {
+  update(relationships: RelationshipEntity[], baseEntities: Entity[], dt: number, spatialRelationships?: readonly RelationshipEntity[]): void {
     this.cells.clear();
     for (const entity of relationships) {
       entity.fieldSourceStrength = fieldSourceStrength(entity);
@@ -37,8 +37,7 @@ export class RelationshipField {
       else this.cells.set(key, [entity]);
     }
 
-    for (const entity of relationships) {
-      if (!entity.spatialActive) continue;
+    for (const entity of spatialRelationships ?? relationships.filter((relationship) => relationship.spatialActive)) {
       const sample = this.sample(entity.x, entity.y, entity.id);
       entity.localFieldPotential = sample.potential;
       entity.localFieldGradientMagnitude = Math.hypot(sample.gradientX, sample.gradientY);
@@ -65,7 +64,9 @@ export class RelationshipField {
 
     for (let cellY = cy - 1; cellY <= cy + 1; cellY++) {
       for (let cellX = cx - 1; cellX <= cx + 1; cellX++) {
-        for (const source of this.cells.get(this.key(cellX, cellY)) ?? []) {
+        const cell = this.cells.get(this.key(cellX, cellY));
+        if (!cell) continue;
+        for (const source of cell) {
           if (source.id === excludedId) continue;
           const dx = source.x - x;
           const dy = source.y - y;

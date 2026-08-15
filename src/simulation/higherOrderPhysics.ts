@@ -18,7 +18,7 @@ export interface HigherOrderInteraction {
 class RelationshipSpatialIndex {
   private readonly cells = new Map<string, RelationshipEntity[]>();
 
-  rebuild(entities: RelationshipEntity[]): void {
+  rebuild(entities: readonly RelationshipEntity[]): void {
     this.cells.clear();
     for (const entity of entities) {
       const key = this.key(Math.floor(entity.x / HIGHER_ORDER_RADIUS), Math.floor(entity.y / HIGHER_ORDER_RADIUS));
@@ -29,9 +29,13 @@ class RelationshipSpatialIndex {
   }
 
   nearby(entity: RelationshipEntity): RelationshipEntity[] {
+    return this.nearbyInto(entity, []);
+  }
+
+  nearbyInto(entity: RelationshipEntity, result: RelationshipEntity[]): RelationshipEntity[] {
+    result.length = 0;
     const cx = Math.floor(entity.x / HIGHER_ORDER_RADIUS);
     const cy = Math.floor(entity.y / HIGHER_ORDER_RADIUS);
-    const result: RelationshipEntity[] = [];
     for (let y = cy - 1; y <= cy + 1; y++) {
       for (let x = cx - 1; x <= cx + 1; x++) {
         const cell = this.cells.get(this.key(x, y));
@@ -63,26 +67,43 @@ export const preferredHigherOrderDistance = (a: RelationshipEntity, b: Relations
 export class HigherOrderPhysics {
   readonly activeInteractions: HigherOrderInteraction[] = [];
   private readonly spatial = new RelationshipSpatialIndex();
+  private readonly traitCache = new WeakMap<RelationshipEntity, { digits: readonly number[]; distanceTrait: number }>();
+
+  private traits(relationship: RelationshipEntity): { digits: readonly number[]; distanceTrait: number } {
+    let value = this.traitCache.get(relationship);
+    if (!value) {
+      value = { digits: [...relationship.fingerprint.slice(0, 16)].map((digit) => parseInt(digit, 16)),
+        distanceTrait: parseInt(relationship.fingerprint.slice(0, 4), 16) / 0xffff };
+      this.traitCache.set(relationship, value);
+    }
+    return value;
+  }
 
   step(
     relationships: RelationshipEntity[],
     baseEntities: Entity[],
     influenceModulation: ReadonlyMap<string, number>,
     dt: number,
+    spatialRelationships?: readonly RelationshipEntity[],
   ): void {
     this.activeInteractions.length = 0;
-    const spatialRelationships = relationships.filter((entity) => entity.spatialActive);
-    this.spatial.rebuild(spatialRelationships);
-    for (const a of spatialRelationships) {
-      for (const b of this.spatial.nearby(a)) {
+    const spatial = spatialRelationships ?? relationships.filter((entity) => entity.spatialActive);
+    this.spatial.rebuild(spatial);
+    const nearby: RelationshipEntity[] = [];
+    for (const a of spatial) {
+      for (const b of this.spatial.nearbyInto(a, nearby)) {
         if (b.id <= a.id || this.sharesParent(a, b)) continue;
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const distance = Math.hypot(dx, dy);
         if (distance <= 0 || distance >= HIGHER_ORDER_RADIUS) continue;
-        const compatibility = higherOrderCompatibility(a, b);
+        const aTraits = this.traits(a), bTraits = this.traits(b);
+        let traitDifference = 0;
+        for (let index = 0; index < 16; index++) traitDifference += Math.abs(aTraits.digits[index] - bTraits.digits[index]) / 15;
+        const compatibility = 1 - 0.6 * (traitDifference / 16) - 0.4 * Math.abs(a.coherence - b.coherence);
         const polarity = compatibility - COMPATIBILITY_CENTER;
-        const preferredDistance = preferredHigherOrderDistance(a, b);
+        const preferredDistance = MIN_PREFERRED_DISTANCE
+          + (MAX_PREFERRED_DISTANCE - MIN_PREFERRED_DISTANCE) * (aTraits.distanceTrait + bTraits.distanceTrait) / 2;
         const radialResponse = polarity > 0
           ? Math.tanh((distance - preferredDistance) / EQUILIBRIUM_WIDTH)
           : 1;

@@ -42,6 +42,7 @@ export const ruptureParameters = (fingerprint: string): RuptureParameters => {
 export class RuptureSystem {
   readonly recentEvents: RuptureEvent[] = [];
   private readonly eventTicks: number[] = [];
+  private readonly parameterCache = new WeakMap<RelationshipEntity, RuptureParameters>();
 
   continuationState(): { recentEvents: RuptureEvent[]; eventTicks: number[] } {
     return { recentEvents: structuredClone(this.recentEvents), eventTicks: [...this.eventTicks] };
@@ -53,12 +54,16 @@ export class RuptureSystem {
 
   update(
     relationships: RelationshipEntity[], entities: Entity[], bonds: Map<string, Bond>,
-    state: WorldState, occurrences: OccurrenceLog,
+    state: WorldState, occurrences: OccurrenceLog, orderedRelationships?: readonly RelationshipEntity[],
   ): void {
-    const ordered = [...relationships].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+    const ordered = orderedRelationships ?? [...relationships].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
     let qualified = 0;
     for (const relationship of ordered) {
-      const parameters = ruptureParameters(relationship.fingerprint);
+      let parameters = this.parameterCache.get(relationship);
+      if (!parameters) {
+        parameters = ruptureParameters(relationship.fingerprint);
+        this.parameterCache.set(relationship, parameters);
+      }
       const cooldownElapsed = relationship.lastRuptureTick === null
         || state.ticks - relationship.lastRuptureTick >= parameters.cooldown;
       relationship.ruptureQualified = relationship.bondStrength >= parameters.requiredBondStrength

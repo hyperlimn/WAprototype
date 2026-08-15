@@ -32,6 +32,8 @@ export class MemoryStore {
   private operation: Promise<void> = Promise.resolve();
   private recentKeys = new Set<string>();
   private readonly recentKeyOrder: string[] = [];
+  private readonly segmentCache = new Map<string, { signature: string; parsed: { events: PersistedEvent[]; malformed: number } }>();
+  private static readonly SEGMENT_CACHE_LIMIT = 4;
 
   constructor(readonly root: string, readonly policy: MemoryPolicy) {}
 
@@ -91,7 +93,8 @@ export class MemoryStore {
     for (const segment of [...segments].reverse()) {
       const parsed = await this.readSegment(segment);
       malformedRecordCount += parsed.malformed;
-      for (const event of parsed.events.reverse()) {
+      for (let index = parsed.events.length - 1; index >= 0; index--) {
+        const event = parsed.events[index];
         if ((query.sinceTick !== undefined && event.tick < query.sinceTick)
           || (query.untilTick !== undefined && event.tick > query.untilTick)
           || (query.type !== undefined && event.type !== query.type)
@@ -169,7 +172,7 @@ export class MemoryStore {
     this.manifest.memoryMode = this.policy.mode;
     this.manifest.occurrenceTypesSeen ??= [];
     if (!this.manifest.simulationVersionsSeen.includes(identity.simulationVersion)) this.manifest.simulationVersionsSeen.push(identity.simulationVersion);
-    this.recentKeys.clear(); this.recentKeyOrder.length = 0;
+    this.recentKeys.clear(); this.recentKeyOrder.length = 0; this.segmentCache.clear();
     const active = this.manifest.segments.at(-1);
     if (active) {
       const recovered = await this.readSegment(active);
@@ -209,6 +212,7 @@ export class MemoryStore {
       notable: notableReasons.length > 0, notableReasons };
     const line = `${JSON.stringify(persisted)}\n`;
     await appendFile(path.join(this.requireDir(), segment.file), line, "utf8");
+    this.segmentCache.delete(segment.file);
     segment.eventCount++; segment.startTick = Math.min(segment.startTick, event.tick); segment.endTick = Math.max(segment.endTick, event.tick);
     segment.bytes += Buffer.byteLength(line);
     manifest.eventCount++; manifest.firstTick = Math.min(manifest.firstTick ?? event.tick, event.tick);
@@ -225,6 +229,12 @@ export class MemoryStore {
   }
 
   private async readSegment(segment: SegmentMetadata): Promise<{ events: PersistedEvent[]; malformed: number }> {
+    const signature = `${segment.bytes}:${segment.eventCount}`;
+    const cached = this.segmentCache.get(segment.file);
+    if (cached?.signature === signature) {
+      this.segmentCache.delete(segment.file); this.segmentCache.set(segment.file, cached);
+      return cached.parsed;
+    }
     try {
       const lines = (await readFile(path.join(this.requireDir(), segment.file), "utf8")).split(/\r?\n/).filter(Boolean);
       const events: PersistedEvent[] = []; let malformed = 0;
@@ -235,7 +245,10 @@ export class MemoryStore {
           else events.push(value as PersistedEvent);
         } catch { malformed++; }
       }
-      return { events, malformed };
+      const parsed = { events, malformed };
+      this.segmentCache.set(segment.file, { signature, parsed });
+      while (this.segmentCache.size > MemoryStore.SEGMENT_CACHE_LIMIT) this.segmentCache.delete(this.segmentCache.keys().next().value!);
+      return parsed;
     } catch { return { events: [], malformed: 1 }; }
   }
 

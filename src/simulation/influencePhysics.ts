@@ -6,12 +6,13 @@ const MAX_INFLUENCE_MODULATION = 0.06;
 
 export class InfluencePhysics {
   readonly modulation = new Map<string, number>();
+  private readonly cells = new Map<string, RelationshipEntity[]>();
 
-  update(relationships: RelationshipEntity[]): void {
+  update(relationships: RelationshipEntity[], spatialRelationships?: readonly RelationshipEntity[], influenceRelationships?: readonly RelationshipEntity[]): void {
     this.modulation.clear();
-    const spatial = relationships.filter((entity) => entity.spatialActive);
-    const influential = relationships.filter((entity) => entity.influenceActive);
-    const cells = new Map<string, RelationshipEntity[]>();
+    const spatial = spatialRelationships ?? relationships.filter((entity) => entity.spatialActive);
+    const influential = influenceRelationships ?? relationships.filter((entity) => entity.influenceActive);
+    const cells = this.cells; cells.clear();
     for (const source of influential) {
       const key = this.key(Math.floor(source.x / INFLUENCE_RADIUS), Math.floor(source.y / INFLUENCE_RADIUS));
       const cell = cells.get(key);
@@ -25,7 +26,9 @@ export class InfluencePhysics {
       const cy = Math.floor(target.y / INFLUENCE_RADIUS);
       for (let y = cy - 1; y <= cy + 1; y++) {
         for (let x = cx - 1; x <= cx + 1; x++) {
-          for (const source of cells.get(this.key(x, y)) ?? []) {
+          const cell = cells.get(this.key(x, y));
+          if (!cell) continue;
+          for (const source of cell) {
             if (source === target) continue;
             const distance = Math.hypot(source.x - target.x, source.y - target.y);
             if (distance >= INFLUENCE_RADIUS) continue;

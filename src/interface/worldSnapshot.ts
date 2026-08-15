@@ -30,6 +30,17 @@ const summarize = <T>(items: readonly T[], select: (item: T) => number): Numeric
 const descending = <T>(select: (item: T) => number, tie: (a: T, b: T) => number) =>
   (a: T, b: T): number => select(b) - select(a) || tie(a, b);
 
+const takeTop = <T>(items: readonly T[], compare: (a: T, b: T) => number, limit = 10): T[] => {
+  const selected: T[] = [];
+  for (const item of items) {
+    let low = 0, high = selected.length;
+    while (low < high) { const middle = (low + high) >>> 1; if (compare(item, selected[middle]) < 0) high = middle; else low = middle + 1; }
+    selected.splice(low, 0, item);
+    if (selected.length > limit) selected.pop();
+  }
+  return selected;
+};
+
 const entityRecord = (entity: Entity, tick: number) => ({
   creationIndex: entity.creationIndex,
   fingerprint: entity.fingerprint,
@@ -112,18 +123,18 @@ export function buildWorldSnapshot(universe: Universe) {
   const sampledEntityMap = new Map<number, Entity>();
   const addEntities = (items: Entity[]): void => items.slice(0, 10).forEach((entity) => sampledEntityMap.set(entity.creationIndex, entity));
   addEntities(entities);
-  addEntities([...entities].sort((a, b) => b.creationIndex - a.creationIndex));
-  addEntities([...entities].sort(descending((entity) => entity.energy, entityTie)));
-  addEntities([...entities].sort(descending((entity) => entity.neighborCount, entityTie)));
-  addEntities([...entities].sort(descending((entity) => entity.strongestBond, entityTie)));
+  addEntities(entities.slice(-10).reverse());
+  addEntities(takeTop(entities, descending((entity) => entity.energy, entityTie)));
+  addEntities(takeTop(entities, descending((entity) => entity.neighborCount, entityTie)));
+  addEntities(takeTop(entities, descending((entity) => entity.strongestBond, entityTie)));
 
   const sampledRelationshipMap = new Map<string, RelationshipEntity>();
   const addRelationships = (items: RelationshipEntity[]): void => items.slice(0, 10)
     .forEach((relationship) => sampledRelationshipMap.set(relationship.id, relationship));
-  addRelationships([...relationships].sort(descending((relationship) => relationship.age, relationshipTie)));
-  addRelationships([...relationships].sort(descending((relationship) => relationship.coherence, relationshipTie)));
-  addRelationships([...relationships].sort(descending((relationship) => relationship.fieldSourceStrength, relationshipTie)));
-  addRelationships([...relationships].sort(descending((relationship) => relationship.synergy, relationshipTie)));
+  addRelationships(takeTop(relationships, descending((relationship) => relationship.age, relationshipTie)));
+  addRelationships(takeTop(relationships, descending((relationship) => relationship.coherence, relationshipTie)));
+  addRelationships(takeTop(relationships, descending((relationship) => relationship.fieldSourceStrength, relationshipTie)));
+  addRelationships(takeTop(relationships, descending((relationship) => relationship.synergy, relationshipTie)));
 
   const recentOccurrences = universe.occurrences.records.slice(-MAX_OCCURRENCES);
   const recentReproductionEvents = recentOccurrences

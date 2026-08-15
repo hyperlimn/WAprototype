@@ -10,7 +10,10 @@ export const RELATIONSHIP_PERSISTENCE_TICKS = 90;
 
 export class RelationshipLayer {
   readonly entities = new Map<string, RelationshipEntity>();
+  private membershipRevision = 0;
   private readonly candidateSince = new Map<string, number>();
+
+  get revision(): number { return this.membershipRevision; }
 
   /** Read-only observation of the lifecycle timer; never creates or advances candidate state. */
   candidateFirstTick(id: string): number | undefined {
@@ -22,6 +25,7 @@ export class RelationshipLayer {
     this.entities.clear(); this.candidateSince.clear();
     for (const relationship of relationships) this.entities.set(relationship.id, relationship);
     for (const [id, tick] of candidates) this.candidateSince.set(id, tick);
+    this.membershipRevision++;
   }
 
   update(baseEntities: Entity[], bonds: Map<string, Bond>, tick: number): void {
@@ -33,6 +37,7 @@ export class RelationshipLayer {
         else if (tick - since >= RELATIONSHIP_PERSISTENCE_TICKS) {
           const [a, b] = this.parents(id, baseEntities);
           this.entities.set(id, this.create(id, a, b, bond.strength, tick));
+          this.membershipRevision++;
           this.candidateSince.delete(id);
         }
       } else {
@@ -40,7 +45,7 @@ export class RelationshipLayer {
       }
     }
 
-    for (const id of [...this.candidateSince.keys()]) {
+    for (const id of this.candidateSince.keys()) {
       if (!bonds.has(id)) this.candidateSince.delete(id);
     }
 
@@ -48,9 +53,10 @@ export class RelationshipLayer {
       const bond = bonds.get(id);
       if (!bond || bond.strength < RELATIONSHIP_DESTRUCTION_BOND) {
         this.entities.delete(id);
+        this.membershipRevision++;
         continue;
       }
-      const [a, b] = this.parents(id, baseEntities);
+      const a = baseEntities[entity.parentAId], b = baseEntities[entity.parentBId];
       this.measure(entity, a, b, bond.strength, tick);
     }
   }

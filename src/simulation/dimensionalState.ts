@@ -21,6 +21,7 @@ export const deriveDimensionalDurations = (fingerprint: string): {
 });
 
 export class DimensionalState {
+  private readonly cells = new Map<string, RelationshipEntity[]>();
   update(relationships: RelationshipEntity[]): void {
     for (const entity of relationships) {
       entity.spatialActive = entity.age < entity.spatialDuration;
@@ -30,7 +31,7 @@ export class DimensionalState {
     }
 
     const spatial = relationships.filter((entity) => entity.spatialActive);
-    const cells = new Map<string, RelationshipEntity[]>();
+    const cells = this.cells; cells.clear();
     for (const entity of spatial) {
       const key = this.key(Math.floor(entity.x / DENSITY_RADIUS), Math.floor(entity.y / DENSITY_RADIUS));
       const cell = cells.get(key);
@@ -43,7 +44,9 @@ export class DimensionalState {
       const cy = Math.floor(entity.y / DENSITY_RADIUS);
       for (let y = cy - 1; y <= cy + 1; y++) {
         for (let x = cx - 1; x <= cx + 1; x++) {
-          for (const other of cells.get(this.key(x, y)) ?? []) {
+          const cell = cells.get(this.key(x, y));
+          if (!cell) continue;
+          for (const other of cell) {
             if (other !== entity && Math.hypot(other.x - entity.x, other.y - entity.y) < DENSITY_RADIUS) {
               entity.localRelationshipDensity++;
             }

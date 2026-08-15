@@ -15,9 +15,13 @@ export class SpatialIndex {
   }
 
   nearby(entity: Entity): Entity[] {
+    return this.nearbyInto(entity, []);
+  }
+
+  nearbyInto(entity: Entity, result: Entity[]): Entity[] {
+    result.length = 0;
     const cx = Math.floor(entity.x / this.cellSize);
     const cy = Math.floor(entity.y / this.cellSize);
-    const result: Entity[] = [];
     for (let y = cy - 1; y <= cy + 1; y++) {
       for (let x = cx - 1; x <= cx + 1; x++) {
         const cell = this.cells.get(this.key(x, y));
