@@ -169,6 +169,16 @@ Oscillation v1 gives every entity an intrinsic oscillator derived only from its 
 
 At authoritative simulation tick `t`, `currentOscillation = sin(phase + 2π × naturalFrequency × t / 1000)`. It is an observation derived from identity and simulation time, not stored mutable state or wall-clock animation. Oscillation v1 is not read by physics, relationships, reproduction, rupture, or other entity interactions. The human Frequency projection only varies entity radius by ±11% and lightness by ±6 points while suppressing relationship clutter; it does not imply resonance or coupling.
 
+### Entity Close-Up
+
+Near the 2D explorer's maximum zoom, a selected entity offers an explicit **View entity up close?** action. The close-up lazy-loads a separate Three.js examination renderer with orbit rotation and dolly controls. Returning restores the prior camera center, zoom, dimension, and fingerprint selection. The orb is an observer-scale projection of identity—not literal surface geometry in the simulation—and is never read by physics.
+
+Morphology v2 renders a `320 × 192` indexed sphere (about 62,000 vertices and 122,000 triangles). A modular feature registry combines a dominant symmetry scaffold with radial petals, latitude rings, longitudinal ridges, polar rosettes, repeated depressions, harmonic interference, tessellated microstructure, and restrained asymmetry. Geometry is generated once per entry. A symmetry-aligned vertex pattern supplies sectors, rings, harmonic interference, restrained palette variation, and patterned emission without texture files. Existing tick-derived oscillation adds only ±0.6% radial breathing and ±8% emissive modulation.
+
+The genome uses independent two-character (8-bit) fingerprint slices, all zero-based: `[0,2)` primary and `[2,4)` secondary symmetry from `{3,4,5,6,7,8,9,10,12}`; `[4,6)` symmetry family; `[6,8)` and `[8,10)` primary/secondary motif families; `[10,12)` amplitude; `[12,14)` frequency; `[14,16)` angular offset; `[16,18)` motif phase; `[18,20)` ring count; `[20,22)` ridge sharpness; `[22,24)` depression depth; `[24,26)` polar and `[26,28)` equatorial weighting; `[28,30)` harmonic count; `[30,32)` harmonic strength; `[32,34)` micro scale; `[34,36)` micro amplitude; `[36,38)` asymmetry (bounded to 0–0.012); `[38,40)` asymmetry phase; `[40,42)` smoothness; `[42,44)` base hue (0.45–0.62); `[44,46)` secondary hue offset; `[46,48)` saturation; `[48,50)` luminance; `[50,52)` emissive hue; `[52,54)` pattern contrast; `[54,56)` emissive intensity; `[56,58)` patterned emission; `[58,60)` material roughness; `[60,62)` metallic response; and `[62,64)` pattern phase. Families are selected from axial/radial/spiral/tessellated scaffolds and petals/rings/nodes/interlock motifs. No runtime randomness is used.
+
+Close-Up camera presets expose that pattern language without changing geometry. **Free** retains ordinary orbit/dolly controls. Morphology is canonically parameterized around the observer-space `+Y` axis, so **Pole** looks directly along `+Y` with `+Z` as camera-up. **Equator** looks along the perpendicular direction `(cos angularOffset, 0, sin angularOffset)` with `+Y` as camera-up. The compact collapsible Morphology instrument reads the already-derived genome and connects scaffold, symmetry orders, motifs, topology amplitudes, palette, emission, and material response to the visible orb.
+
 ## Machine interface
 
 The simulation is authoritative. Interfaces observe it.
@@ -307,6 +317,12 @@ npm run universe:resume -- --save data/universes/<universe>/save-states/<save-id
 ```
 
 Resume validates schema, simulation version, identity, and checksum before starting the ordinary `npm run dev` runtime with the saved initialization path. It refuses if the default bridge reports another connected authoritative browser. The save artifact remains immutable. Runtime status and canonical snapshot metadata report `fresh` or the source save ID/hash/tick used for a resumed process.
+
+### Laboratory & Tools operator console
+
+The collapsible browser panel is a bounded local operator instrument, not a shell. It exposes Save, observer-once/loop, owned-loop Stop, experiment discovery, blind/reveal launch, runtime provenance, save-path guidance, and command help. Every action displays its equivalent CLI invocation and streams bounded timestamped output with running/completed/failed state, copy, and session clear controls.
+
+The loopback bridge accepts only registry command IDs and validated typed arguments from localhost origins. It maps them to fixed existing ProtoUniverse scripts; clients cannot supply executables, shell text, working directories, environment variables, or arbitrary options. Reveal availability reflects frozen/comparison artifacts, while the existing Laboratory runner remains authoritative for scientific integrity. `npm run help`, individual Laboratory help, and the GUI render metadata from `src/operator/commandRegistry.ts`.
 
 ### Recurring machine observer
 

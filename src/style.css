@@ -19,8 +19,29 @@ body { background: #070a0d; }
   scrollbar-color: #38504f #090e11;
   z-index: 2;
 }
-.canvas-region { min-width: 0; height: 100vh; overflow: hidden; }
+.canvas-region { position: relative; min-width: 0; height: 100vh; overflow: hidden; }
 canvas { width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
+.closeup-invitation { position: absolute; left: 50%; bottom: 24px; z-index: 4; transform: translateX(-50%); border-color: #668b88; padding: 8px 13px; color: #d8e3e0; background: rgba(12, 20, 23, .92); box-shadow: 0 8px 24px rgba(0, 0, 0, .3); }
+.closeup-invitation[hidden], .entity-closeup[hidden] { display: none; }
+.entity-closeup { position: absolute; inset: 0; z-index: 6; overflow: hidden; color: #bdcac8; background: #030709; }
+.entity-closeup-viewport, .entity-closeup-viewport canvas { width: 100%; height: 100%; }
+.entity-closeup-viewport canvas { cursor: grab; }
+.entity-closeup-viewport canvas:active { cursor: grabbing; }
+.entity-closeup-header { position: absolute; top: 22px; left: 22px; right: 22px; display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; pointer-events: none; }
+.entity-closeup-header button { pointer-events: auto; border-color: rgba(127, 170, 168, .4); background: rgba(8, 14, 16, .84); }
+.entity-closeup-identity { display: flex; max-width: min(52vw, 540px); flex-direction: column; align-items: flex-end; gap: 4px; text-align: right; }
+.entity-closeup-identity span { color: #718987; font-size: 9px; letter-spacing: .15em; text-transform: uppercase; }
+.entity-closeup-identity strong { color: #dde9e6; font-size: 15px; font-weight: 500; }
+.entity-closeup-identity code { overflow-wrap: anywhere; color: #927f54; font-size: 8px; }
+.entity-closeup-note { position: absolute; right: 22px; bottom: 18px; max-width: 380px; margin: 0; color: #536462; font-size: 9px; line-height: 1.5; text-align: right; }
+.entity-closeup-tools { position: absolute; top: 78px; right: 22px; width: 220px; color: #91a29f; }
+.closeup-camera-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 8px; }
+.closeup-camera-presets button { padding: 5px 6px; background: rgba(8, 14, 16, .88); }
+.closeup-camera-presets button.is-selected { border-color: #789b99; color: #e1ece9; background: rgba(39, 61, 62, .88); }
+.morphology-inspector { border: 1px solid rgba(127, 170, 168, .25); background: rgba(8, 14, 16, .88); }
+.morphology-inspector summary { padding: 7px 9px; cursor: pointer; color: #789b99; font-size: 9px; letter-spacing: .13em; text-transform: uppercase; }
+.morphology-inspector dl { max-height: min(52vh, 410px); padding: 0 9px 8px; overflow-y: auto; font-size: 9px; }
+.morphology-inspector dl div { border-top: 1px solid rgba(127, 170, 168, .08); }
 .sidebar-title { padding: 24px 24px 20px; }
 .eyebrow { margin: 0; color: #69908f; letter-spacing: .16em; font-size: 10px; }
 .sidebar-title h1 { margin: 7px 0 5px; color: #dde9e6; font-size: 22px; font-weight: 500; letter-spacing: .04em; }
@@ -78,6 +99,19 @@ input[type="range"] { width: 100%; height: 2px; accent-color: #749b99; }
 .occurrences li { padding: 3px 0; border-bottom: 1px solid rgba(127, 170, 168, .06); }
 .occurrences li.newest { color: #c7d4d1; }
 .occurrences li span { color: #8facaa; font-variant-numeric: tabular-nums; }
+.operator-group { margin-bottom: 15px; }
+.operator-group h3 { margin: 0 0 7px; color: #657f7d; font-size: 9px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+.operator-group input, .operator-group select { width: 100%; margin-top: 5px; border: 1px solid #38504f; border-radius: 2px; padding: 6px 7px; color: #bdcac8; background: #11191c; font: inherit; font-size: 10px; }
+.operator-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.operator-actions button { flex: 1 1 auto; }
+.operator-console button:disabled { cursor: not-allowed; opacity: .38; }
+.operator-runtime { margin-top: 8px; font-size: 9px; }
+.operator-runtime dd { max-width: 62%; overflow-wrap: anywhere; }
+.operator-note { min-height: 15px; margin: 5px 0 8px; color: #647775; font-size: 9px; line-height: 1.45; }
+.operator-terminal { margin-top: 10px; border: 1px solid #2d4140; background: #05090b; }
+.operator-terminal-bar { display: flex; align-items: center; justify-content: space-between; padding: 5px 7px; border-bottom: 1px solid #263938; color: #708b89; font-size: 9px; text-transform: uppercase; }
+.operator-terminal-bar button { border: 0; padding: 2px 5px; background: transparent; }
+.operator-terminal pre { max-height: 240px; margin: 0; padding: 9px; overflow: auto; color: #93aaa7; white-space: pre-wrap; overflow-wrap: anywhere; font: 9px/1.55 "IBM Plex Mono", "Cascadia Mono", Consolas, monospace; }
 
 @media (max-width: 760px) {
   #app { display: block; }

@@ -15,12 +15,14 @@
     "observer:once": "node scripts/observer-loop.mjs --once",
     "universe:save": "node scripts/universe-save.mjs",
     "universe:resume": "tsx scripts/universe-resume.mjs",
-    "test": "tsc -p tsconfig.test.json && node .test-dist/tests/memory.test.js && node .test-dist/tests/observerMemory.test.js && node .test-dist/tests/mcp.integration.test.js && node .test-dist/tests/laboratory.test.js && node .test-dist/tests/dimensionProjection.test.js && node .test-dist/tests/dimensionAutoCycle.test.js && node .test-dist/tests/oscillation.test.js && node .test-dist/tests/humanView.test.js && tsx tests/saveState.test.ts && node tests/observerLoop.test.mjs && node scripts/clean-test-build.mjs",
+    "help": "tsx scripts/help.ts",
+    "test": "tsc -p tsconfig.test.json && node .test-dist/tests/memory.test.js && node .test-dist/tests/observerMemory.test.js && node .test-dist/tests/mcp.integration.test.js && node .test-dist/tests/laboratory.test.js && node .test-dist/tests/dimensionProjection.test.js && node .test-dist/tests/dimensionAutoCycle.test.js && node .test-dist/tests/oscillation.test.js && node .test-dist/tests/humanView.test.js && tsx tests/saveState.test.ts && tsx tests/operatorConsole.test.ts && tsx tests/entityCloseup.test.ts && node tests/observerLoop.test.mjs && node scripts/clean-test-build.mjs",
     "build": "tsc && tsc -p tsconfig.server.json && vite build",
     "preview": "vite preview"
   },
   "devDependencies": {
     "@types/node": "^24.2.1",
+    "@types/three": "^0.185.4",
     "concurrently": "^10.0.4",
     "tsx": "^4.23.0",
     "typescript": "^5.7.2",
@@ -29,6 +31,7 @@
   "dependencies": {
     "@modelcontextprotocol/client": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",
+    "three": "^0.185.1",
     "zod": "^4.4.3"
   }
 }

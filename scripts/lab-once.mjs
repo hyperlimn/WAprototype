@@ -8,6 +8,7 @@ import { DEFAULT_EXPEDITION_TIMEOUT_SECONDS, terminateProcessTree } from "./obse
 import { buildLaboratoryCodexCommand } from "./lab-command.mjs";
 import { createEmptyLaboratoryWorkspace, removeLaboratoryWorkspace } from "./lab-isolation.mjs";
 import { freezeReconstruction, frozenArtifactPath } from "../server/laboratory/revealChamber.ts";
+import { commandById, formatRegistryHelp } from "../src/operator/commandRegistry.ts";
 
 export const LAB_PROMPT = `You are entering ProtoUniverse.
 
@@ -23,6 +24,7 @@ Report what you discover, what seems puzzling, and what questions arise.`;
 
 const values = process.argv.slice(2); let experimentId, timeoutSeconds = DEFAULT_EXPEDITION_TIMEOUT_SECONDS;
 for (let index = 0; index < values.length; index++) {
+  if (values[index] === "--help" || values[index] === "-h") { process.stdout.write(`${commandById("lab.blind").cli}\n\n${formatRegistryHelp()}\n`); process.exit(0); }
   if (values[index] === "--experiment") experimentId = values[++index];
   else if (values[index] === "--expedition-timeout") timeoutSeconds = Number(values[++index]);
   else throw new Error(`unknown option: ${values[index]}`);

@@ -88,6 +88,32 @@
           <button id="copySimulationLog" class="primary-action" type="button">Copy simulation log</button>
           <p id="copyStatus" class="copy-status" role="status" aria-live="polite"></p>
         </section>
+        <section class="sidebar-section operator-console" id="operatorConsole" aria-label="Laboratory and Tools">
+          <h2>Laboratory &amp; Tools</h2>
+          <div class="operator-group">
+            <h3>Universe</h3>
+            <button type="button" data-operator-command="universe.save">Save current universe state</button>
+            <dl class="operator-runtime"><div><dt>Runtime</dt><dd id="operatorRuntime">unavailable</dd></div><div><dt>Save path</dt><dd id="operatorSavePattern">—</dd></div></dl>
+          </div>
+          <div class="operator-group">
+            <h3>Observation</h3>
+            <label>Observer <input id="operatorObserver" value="codex-first-entry" maxlength="80" /></label>
+            <div class="operator-actions"><button type="button" data-operator-command="observer.once">Run once</button><button type="button" data-operator-command="observer.loop">Start loop</button><button id="operatorStop" type="button" disabled>Stop GUI run</button></div>
+          </div>
+          <div class="operator-group">
+            <h3>Laboratory</h3>
+            <label>Experiment <select id="operatorExperiment"></select></label>
+            <p id="operatorExperimentStatus" class="operator-note">Loading experiments…</p>
+            <div class="operator-actions"><button id="operatorBlind" type="button">Launch blind</button><button id="operatorReveal" type="button">Reveal / compare</button></div>
+          </div>
+          <div class="operator-group">
+            <h3>Help</h3><button id="operatorHelp" type="button">Show command help</button>
+          </div>
+          <div class="operator-terminal" aria-label="ProtoUniverse operator output">
+            <div class="operator-terminal-bar"><span id="operatorRunState">idle</span><span><button id="operatorCopy" type="button">Copy</button><button id="operatorClear" type="button">Clear</button></span></div>
+            <pre id="operatorOutput" aria-live="polite">ProtoUniverse operator console ready.</pre>
+          </div>
+        </section>
         <section class="sidebar-section machine-interface" aria-label="Machine interface status">
           <h2>Machine interface</h2>
           <dl>
@@ -100,7 +126,33 @@
           </dl>
         </section>
       </aside>
-      <div class="canvas-region"><canvas id="universe" aria-label="Universe 0 simulation"></canvas></div>
+      <div class="canvas-region">
+        <canvas id="universe" aria-label="Universe 0 simulation"></canvas>
+        <button id="closeupInvitation" class="closeup-invitation" type="button" hidden>View entity up close?</button>
+        <section id="entityCloseup" class="entity-closeup" aria-label="Entity Close-Up" hidden>
+          <div id="entityCloseupViewport" class="entity-closeup-viewport"></div>
+          <div class="entity-closeup-header">
+            <button id="entityCloseupBack" type="button">← Return to universe</button>
+            <div class="entity-closeup-identity">
+              <span>Entity Close-Up</span>
+              <strong id="entityCloseupIdentity"></strong>
+              <code id="entityCloseupFingerprint"></code>
+            </div>
+          </div>
+          <div class="entity-closeup-tools">
+            <div class="closeup-camera-presets" role="group" aria-label="Close-up camera preset">
+              <button type="button" data-closeup-preset="free" class="is-selected">Free</button>
+              <button type="button" data-closeup-preset="pole">Pole</button>
+              <button type="button" data-closeup-preset="equator">Equator</button>
+            </div>
+            <details id="morphologyInspector" class="morphology-inspector" open>
+              <summary>Morphology</summary>
+              <dl id="morphologyInspectorValues"></dl>
+            </details>
+          </div>
+          <p class="entity-closeup-note">An observer projection of identity at examination scale—not simulated surface physics.</p>
+        </section>
+      </div>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -12,6 +12,8 @@ import { bindCollapsiblePanels } from "./ui/collapsiblePanels";
 import { bindDimensionSelector } from "./ui/dimensionSelector";
 import { bindDimensionAutoCycle, type DimensionAutoCycle } from "./ui/dimensionAutoCycle";
 import { startMachineBridgeClient, type MachineBridgeStatus } from "./interface/machineBridgeClient";
+import { bindOperatorConsole } from "./ui/operatorConsole";
+import { bindEntityCloseup } from "./closeup/entityCloseupController";
 
 async function main(): Promise<void> {
 const canvas = document.querySelector<HTMLCanvasElement>("#universe")!;
@@ -26,6 +28,7 @@ const memoryEvents = document.querySelector<HTMLElement>("#memoryEvents")!;
 const memoryLatest = document.querySelector<HTMLElement>("#memoryLatest")!;
 const simulationTicks = document.querySelector<HTMLElement>("#simulationTicks")!;
 bindCollapsiblePanels(document.querySelector<HTMLElement>(".sidebar")!);
+bindOperatorConsole(document.querySelector<HTMLElement>("#operatorConsole")!);
 document.querySelector<HTMLElement>("#simulationVersion")!.textContent = SIMULATION_VERSION;
 const camera = new Camera();
 const renderer = new Renderer(canvas, camera);
@@ -62,8 +65,19 @@ let schedulerTime = performance.now();
 let lastRenderTime = 0;
 let instrumentTimer = 0;
 let bridgeStatus: MachineBridgeStatus = { connected: false, lastPublishAt: null, lastSnapshotDurationMs: null };
+const closeup = bindEntityCloseup({
+  invitation: document.querySelector<HTMLButtonElement>("#closeupInvitation")!,
+  closeup: document.querySelector<HTMLElement>("#entityCloseup")!,
+  viewport: document.querySelector<HTMLElement>("#entityCloseupViewport")!,
+  back: document.querySelector<HTMLButtonElement>("#entityCloseupBack")!,
+  identity: document.querySelector<HTMLElement>("#entityCloseupIdentity")!,
+  fingerprint: document.querySelector<HTMLElement>("#entityCloseupFingerprint")!,
+  presetButtons: [...document.querySelectorAll<HTMLButtonElement>("[data-closeup-preset]")],
+  morphologyValues: document.querySelector<HTMLElement>("#morphologyInspectorValues")!,
+}, camera, renderer, dimensionSelector, autoCycle, () => universe);
 
 function replaceUniverse(seed: string): void {
+  closeup.exit();
   universe = new Universe(seed);
   renderer.selected = null;
   renderer.selectedRelationship = null;
@@ -197,6 +211,7 @@ function frame(now: number): void {
   }
   lastRenderTime = now;
   renderer.draw(universe);
+  closeup.update();
   instrumentTimer += elapsed;
   if (instrumentTimer > 150) {
     updateInstruments(instruments, universe);
