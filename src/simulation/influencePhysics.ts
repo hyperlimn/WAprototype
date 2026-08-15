@@ -8,7 +8,7 @@ export class InfluencePhysics {
   readonly modulation = new Map<string, number>();
   private readonly cells = new Map<string, RelationshipEntity[]>();
 
-  update(relationships: RelationshipEntity[], spatialRelationships?: readonly RelationshipEntity[], influenceRelationships?: readonly RelationshipEntity[]): void {
+  update(relationships: RelationshipEntity[], spatialRelationships?: readonly RelationshipEntity[], influenceRelationships?: readonly RelationshipEntity[], influenceScale = INFLUENCE_SCALE): void {
     this.modulation.clear();
     const spatial = spatialRelationships ?? relationships.filter((entity) => entity.spatialActive);
     const influential = influenceRelationships ?? relationships.filter((entity) => entity.influenceActive);
@@ -33,7 +33,7 @@ export class InfluencePhysics {
             const distance = Math.hypot(source.x - target.x, source.y - target.y);
             if (distance >= INFLUENCE_RADIUS) continue;
             const falloff = 1 - distance / INFLUENCE_RADIUS;
-            field += INFLUENCE_SCALE * source.coherence * falloff;
+            field += influenceScale * source.coherence * falloff;
           }
         }
       }

@@ -85,6 +85,7 @@ export class HigherOrderPhysics {
     influenceModulation: ReadonlyMap<string, number>,
     dt: number,
     spatialRelationships?: readonly RelationshipEntity[],
+    forceStrength = HIGHER_ORDER_FORCE,
   ): void {
     this.activeInteractions.length = 0;
     const spatial = spatialRelationships ?? relationships.filter((entity) => entity.spatialActive);
@@ -110,7 +111,7 @@ export class HigherOrderPhysics {
         const falloff = 1 - distance / HIGHER_ORDER_RADIUS;
         const influence = ((influenceModulation.get(a.id) ?? 1) + (influenceModulation.get(b.id) ?? 1)) / 2;
         const synergy = 1 + 0.08 * (a.synergy + b.synergy) / 2;
-        const magnitude = HIGHER_ORDER_FORCE * polarity * radialResponse
+        const magnitude = forceStrength * polarity * radialResponse
           * falloff * a.coherence * b.coherence * influence * synergy * dt;
         const fx = dx / distance * magnitude;
         const fy = dy / distance * magnitude;

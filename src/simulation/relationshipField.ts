@@ -24,7 +24,7 @@ export const fieldSourceStrength = (entity: RelationshipEntity): number =>
 export class RelationshipField {
   private readonly cells = new Map<string, RelationshipEntity[]>();
 
-  update(relationships: RelationshipEntity[], baseEntities: Entity[], dt: number, spatialRelationships?: readonly RelationshipEntity[]): void {
+  update(relationships: RelationshipEntity[], baseEntities: Entity[], dt: number, spatialRelationships?: readonly RelationshipEntity[], fieldForceStrength = FIELD_FORCE_STRENGTH): void {
     this.cells.clear();
     for (const entity of relationships) {
       entity.fieldSourceStrength = fieldSourceStrength(entity);
@@ -41,8 +41,8 @@ export class RelationshipField {
       const sample = this.sample(entity.x, entity.y, entity.id);
       entity.localFieldPotential = sample.potential;
       entity.localFieldGradientMagnitude = Math.hypot(sample.gradientX, sample.gradientY);
-      const ax = FIELD_FORCE_STRENGTH * sample.gradientX * dt;
-      const ay = FIELD_FORCE_STRENGTH * sample.gradientY * dt;
+      const ax = fieldForceStrength * sample.gradientX * dt;
+      const ay = fieldForceStrength * sample.gradientY * dt;
       // Translation is equal for both parents, adding no direct internal force.
       baseEntities[entity.parentAId].vx += ax;
       baseEntities[entity.parentAId].vy += ay;

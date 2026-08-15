@@ -25,13 +25,28 @@ Lower layers must not depend on presentation, operator UI, or experimental polic
 
 Forbidden dependencies: simulation code must not import UI, Three.js, MCP, Laboratory, persistence stores, or operator modules. Wall-clock profiling and rendering animation must never feed physics.
 
+#### Law Evolution v1
+
+Law Evolution is authoritative, deterministic law state. Every 500,000 completed ticks, after all existing step phases and measurements, the runtime builds `cosmological-state-vector/1`, encodes its classified measurements as fixed-point big-endian bytes, and hashes those bytes with the universe identity, epoch, boundary, grammar versions, previous law-set hash, and previous evolution hash. `law-grammar/1` decodes only a bounded parameter modulation. The mutation is installed atomically and first affects the following tick.
+
+```text
+completed authoritative state
+-> canonical cosmological vector
+-> Law Evolution Hash
+-> bounded Law Genome
+-> effective parameter set and immutable law-set manifest
+-> subsequent authoritative evolution
+```
+
+The typed Law Parameter Registry is the only route by which an evolved genome can affect physics. V1 cannot generate code, add phases, change PRNG/tick/save/archive machinery, or allocate per-entity law state. Effective parameter lookup is fixed-size and O(1); immutable birth records are continuation history.
+
 ### Derived measurements
 
 Current aggregates in `WorldState`, diagnostics in `src/observation/`, oscillation-at-tick, anomaly scores, comparisons, and attention rankings are derived observations. Some rolling values remain persisted for save compatibility even when rebuildable. Observer-only timing data lives outside `WorldState` and save payloads.
 
 ### Persistence
 
-`src/simulation/saveState.ts` defines the executable continuation schema `protouniverse-save-state/1`. `server/save-state/` writes immutable artifacts and verifies compatibility/checksums. `server/memory/` owns observational archives and checkpoints. Checkpoints are evidence; save states are executable continuation points. Neither is presentation state.
+`src/simulation/saveState.ts` defines the executable continuation schema `protouniverse-save-state/2`. `server/save-state/` writes immutable artifacts and verifies compatibility/checksums. Version-1 saves below tick 500,000 migrate explicitly into Law Epoch 0; later version-1 saves fail closed because Law Evolution did not shape their past. `server/memory/` owns observational archives and checkpoints. Checkpoints are evidence; save states are executable continuation points. Neither is presentation state.
 
 Save compatibility rule: do not change the continuation schema, state meaning, PRNG semantics, or law order without an explicit version and migration decision.
 

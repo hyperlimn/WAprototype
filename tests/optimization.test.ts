@@ -17,7 +17,7 @@ test("Optimization v1 preserves the relationship-bearing fixed-seed continuation
 test("Optimization v1 caches and scratch work remain outside save-state continuation", () => {
   const uninterrupted = new Universe("optimization-v1-resume"); advance(uninterrupted, 1_100);
   const saved = uninterrupted.continuationState();
-  assert.deepEqual(Object.keys(saved).sort(), ["bonds", "entities", "occurrences", "randomState", "relationshipCandidates",
+  assert.deepEqual(Object.keys(saved).sort(), ["bonds", "entities", "lawEvolution", "occurrences", "randomState", "relationshipCandidates",
     "relationships", "reproductionBirthTicks", "rupture", "runtime", "schemaVersion", "simulationVersion", "state", "tick", "universe"].sort());
   const resumed = new Universe(saved.universe, structuredClone(saved));
   advance(uninterrupted, 400); advance(resumed, 400);

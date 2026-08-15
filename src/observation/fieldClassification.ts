@@ -26,4 +26,10 @@ export const OBSERVATION_FIELD_CLASSIFICATION: readonly ObservationFieldDescript
   { path: "population.*Count|worldState.*Created|worldState.*Destroyed", classification: "cumulative-history", note: "Cumulative historical bookkeeping." },
   { path: "*Summary|*Diagnostics", classification: "inferred-present", note: "Derived observational aggregates; individual fields may later receive finer labels." },
   { path: "recentOccurrences[]", classification: "historical-record", note: "Recorded event history." },
+  { path: "laws.effectiveParameters", classification: "present-structural", note: "The currently effective authoritative law set." },
+  { path: "laws.history[].genome", classification: "immutable-identity", note: "Immutable evolved-law identity; its source hash is provenance." },
+  { path: "laws.history[].bornAtTick|vector", classification: "historical-record", note: "Law birth chronology and its historical derived measurements." },
+  { path: "laws.history[].*Hash", classification: "provenance", note: "Canonical Law Evolution ancestry." },
+  { path: "laws.evolvedLawCount", classification: "cumulative-history", note: "Number of prior law births." },
+  { path: "metadata.lawEvolution.currentEpoch|nextBoundaryTick", classification: "observer-metadata", note: "Current law clock and next boundary." },
 ]);

@@ -46,7 +46,8 @@ test("normal MCP exposes read-only human_view as image without general-purpose c
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair(); const client = new Client({ name: "human-view-test", version: "1" });
   try {
     await server.connect(serverTransport); await client.connect(clientTransport); const names = (await client.listTools()).tools.map((tool) => tool.name);
-    assert.ok(names.includes("human_view")); for (const forbidden of ["shell", "filesystem", "browser", "desktop", "screenshot"]) assert.ok(!names.includes(forbidden));
+    assert.ok(names.includes("human_view")); for (const lawFaculty of ["law_epoch", "laws", "law_history", "law_inspect"]) assert.ok(names.includes(lawFaculty));
+    for (const forbidden of ["shell", "filesystem", "browser", "desktop", "screenshot"]) assert.ok(!names.includes(forbidden));
     const result = await client.callTool({ name: "human_view", arguments: { dimension: "influence", width: 480, height: 320 } });
     const image = result.content.find((item: any) => item.type === "image") as any; assert.equal(image.mimeType, "image/png"); assert.ok(image.data.length > 100);
     assert.equal((result.structuredContent as any).tick, 100); assert.equal((result.structuredContent as any).renderKind, "rendered_view");
@@ -60,7 +61,8 @@ test("all existing archaeology profiles default Human View closed", async () => 
     const experiment = await store.load(id); assert.equal(experiment.profile.humanView, undefined);
     const server = buildLaboratoryMcpServer(experiment, new FixtureGateway()); const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     const client = new Client({ name: id, version: "1" }); try { await server.connect(serverTransport); await client.connect(clientTransport);
-      assert.ok(!(await client.listTools()).tools.some((tool) => tool.name === "human_view"));
+      const names=(await client.listTools()).tools.map((tool)=>tool.name); assert.ok(!names.includes("human_view"));
+      for (const lawFaculty of ["law_epoch", "laws", "law_history", "law_inspect"]) assert.ok(!names.includes(lawFaculty));
     } finally { await client.close(); await server.close(); }
   }
 });

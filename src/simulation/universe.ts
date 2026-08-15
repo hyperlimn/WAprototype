@@ -16,6 +16,7 @@ import { SAVE_STATE_SCHEMA_VERSION, validateContinuation, type RuntimeProvenance
 import { orderedBonds, orderedRelationships } from "./deterministicOrdering";
 import { SimulationProfiler } from "./simulationProfiler";
 import { RelationshipTickWorkspace } from "./relationshipTickWorkspace";
+import { buildCosmologicalStateVector, evolveLawState, initialLawEvolutionState, type LawEvolutionState } from "./lawEvolution";
 
 export const SIMULATION_VERSION = "u0.6";
 export const INITIAL_ENTITY_COUNT = 20;
@@ -40,6 +41,7 @@ export class Universe {
   private readonly relationshipWorkspace = new RelationshipTickWorkspace();
   private readonly random: SeededRandom;
   readonly runtime: RuntimeProvenance;
+  lawEvolution: LawEvolutionState;
   readonly state: WorldState = {
     worldAlpha: 0,
     worldBeta: 0,
@@ -80,7 +82,7 @@ export class Universe {
     simulationTime: 0,
   };
 
-  constructor(readonly seed: string, saved?: UniverseContinuationState) {
+  constructor(readonly seed: string, saved?: UniverseContinuationState, options: { lawEpochInterval?: number } = {}) {
     this.random = new SeededRandom(`${SIMULATION_VERSION}:${seed}`);
     if (saved) {
       const value = validateContinuation(saved, SIMULATION_VERSION); if (value.universe !== seed) throw new Error("Save universe identity does not match requested universe");
@@ -90,10 +92,12 @@ export class Universe {
       this.reproduction.restoreContinuationState(value.reproductionBirthTicks); this.rupture.restoreContinuationState(value.rupture);
       this.occurrences.restoreContinuationState(value.occurrences); this.random.restoreContinuationState(value.randomState);
       this.runtime = structuredClone(value.runtime);
+      this.lawEvolution = structuredClone(value.lawEvolution);
     } else {
       this.runtime = { mode: "fresh", sourceSaveId: null, sourceSaveHash: null, sourceSaveTick: null };
       for (let i = 0; i < INITIAL_ENTITY_COUNT; i++) this.entities.push(this.createIntroducedEntity("initial", 0));
       this.measure();
+      this.lawEvolution = initialLawEvolutionState(options.lawEpochInterval);
     }
   }
 
@@ -102,13 +106,15 @@ export class Universe {
       tick: this.state.ticks, runtime: this.runtime, state: this.state, entities: this.entities,
       bonds: orderedBonds(this.bonds), relationships: orderedRelationships(this.relationshipLayer.entities.values()),
       relationshipCandidates: this.relationshipLayer.continuationCandidates(), reproductionBirthTicks: this.reproduction.continuationState(),
-      rupture: this.rupture.continuationState(), occurrences: this.occurrences.continuationState(), randomState: this.random.continuationState() });
+      rupture: this.rupture.continuationState(), occurrences: this.occurrences.continuationState(), randomState: this.random.continuationState(),
+      lawEvolution: this.lawEvolution });
   }
 
   step(dt = 1): void {
     this.profiler.beginStep();
     let phaseStarted = this.profiler.clock();
-    stepPhysics(this.entities, this.spatial, this.bonds, this.state, dt);
+    const law = this.lawEvolution.activeManifest.effectiveParameters;
+    stepPhysics(this.entities, this.spatial, this.bonds, this.state, dt, { baseForce: law["base-force"], damping: law.damping });
     this.profiler.record("base-physics", phaseStarted);
     phaseStarted = this.profiler.clock();
     this.state.ticks++;
@@ -185,13 +191,13 @@ export class Universe {
     }
     this.profiler.record("dimensional-transition-events", phaseStarted);
     phaseStarted = this.profiler.clock();
-    this.influencePhysics.update(relationships, this.relationshipWorkspace.spatial, this.relationshipWorkspace.influential);
+    this.influencePhysics.update(relationships, this.relationshipWorkspace.spatial, this.relationshipWorkspace.influential, law["influence-scale"]);
     this.profiler.record("influence-physics", phaseStarted);
     phaseStarted = this.profiler.clock();
-    this.relationshipField.update(relationships, this.entities, dt, this.relationshipWorkspace.spatial);
+    this.relationshipField.update(relationships, this.entities, dt, this.relationshipWorkspace.spatial, law["field-force"]);
     this.profiler.record("relationship-field", phaseStarted);
     phaseStarted = this.profiler.clock();
-    this.higherOrderPhysics.step(relationships, this.entities, this.influencePhysics.modulation, dt, this.relationshipWorkspace.spatial);
+    this.higherOrderPhysics.step(relationships, this.entities, this.influencePhysics.modulation, dt, this.relationshipWorkspace.spatial, law["higher-order-force"]);
     this.profiler.record("higher-order-physics", phaseStarted);
     phaseStarted = this.profiler.clock();
     this.measure(this.relationshipWorkspace);
@@ -221,6 +227,13 @@ export class Universe {
     } else {
       this.profiler.record("reproduction", phaseStarted);
       this.profiler.record("post-reproduction-measurement-if-needed", this.profiler.clock());
+    }
+    if (this.state.ticks % this.lawEvolution.epochInterval === 0) {
+      const vector = buildCosmologicalStateVector(this.state, this.entities, this.relationshipWorkspace.all);
+      this.lawEvolution = evolveLawState(this.lawEvolution, this.seed, vector);
+      const born = this.lawEvolution.records.at(-1)!;
+      this.occurrences.add({ tick: this.state.ticks, type: "law-evolution", description: `law evolution — ${born.targetParameter} ${born.priorValue} → ${born.resultingValue}`,
+        lawEvolutionId: born.id, x: 0, y: 0 });
     }
     this.profiler.endStep();
   }

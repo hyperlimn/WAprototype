@@ -123,6 +123,13 @@ const handleRequest = async (request: IncomingMessage, response: ServerResponse)
   }
   if (url.pathname === "/api/state") return store.snapshot
     ? json(response, 200, store.snapshot) : json(response, 503, { error: "snapshot_unavailable" });
+  if (url.pathname === "/api/law-epoch") return store.snapshot
+    ? json(response, 200, store.snapshot.metadata.lawEvolution ?? { currentEpoch: 0 }) : json(response, 503, { error: "snapshot_unavailable" });
+  if (url.pathname === "/api/laws") return store.snapshot
+    ? json(response, 200, store.snapshot.laws ?? { effectiveParameters: {}, evolvedLawCount: 0, history: [] }) : json(response, 503, { error: "snapshot_unavailable" });
+  const lawMatch = url.pathname.match(/^\/api\/law\/(law-[a-zA-Z0-9-]+)$/);
+  if (lawMatch && store.snapshot) { const laws = (store.snapshot.laws as { history?: Array<{ id: string }> } | undefined)?.history ?? [];
+    const found = laws.find((item) => item.id === lawMatch[1]); return found ? json(response, 200, found) : notFound(response, "law", lawMatch[1]); }
   if (url.pathname === "/api/events") {
     const limit = optionalNumber(url, "limit", { integer: true, min: 1, max: MAX_BRIDGE_EVENTS }) ?? 100;
     return json(response, 200, store.events.slice(-limit));

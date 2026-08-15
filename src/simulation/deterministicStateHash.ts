@@ -12,8 +12,9 @@ const canonicalize = (value: unknown): unknown => {
 /** Canonical meaningful continuation surface. Runtime provenance and other
  * operational metadata are intentionally excluded from replay identity. */
 export function canonicalContinuationPayload(value: UniverseContinuationState): unknown {
+  const beforeFirstEvolution = value.lawEvolution.completedEpoch === 0;
   return canonicalize({
-    schemaVersion: value.schemaVersion,
+    schemaVersion: beforeFirstEvolution ? "protouniverse-save-state/1" : value.schemaVersion,
     simulationVersion: value.simulationVersion,
     universe: value.universe,
     tick: value.tick,
@@ -26,6 +27,7 @@ export function canonicalContinuationPayload(value: UniverseContinuationState): 
     rupture: value.rupture,
     occurrences: value.occurrences,
     randomState: value.randomState,
+    ...(beforeFirstEvolution ? {} : { lawEvolution: value.lawEvolution }),
   });
 }
 export function deterministicStateHash(value: UniverseContinuationState): string {

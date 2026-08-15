@@ -42,6 +42,8 @@ export interface VeilProfile {
   changes?: boolean;
   catalogs?: boolean;
   humanView?: boolean;
+  /** Default false. Law Evolution is a separate epistemic capability. */
+  lawEvolution?: boolean;
 }
 
 export interface ExperimentDefinition {

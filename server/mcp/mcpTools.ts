@@ -22,7 +22,7 @@ const attentionLinks = (result: any): ResourceLink[] => {
 };
 const targetParams = (args: z.infer<typeof targetSchema>) => ({ ...args });
 
-type Faculty = "orient" | "inspect" | "context" | "anomalies" | "similar" | "compare" | "changes" | "list_universes" | "history" | "checkpoints" | "checkpoint" | "human_view";
+type Faculty = "orient" | "inspect" | "context" | "anomalies" | "similar" | "compare" | "changes" | "list_universes" | "history" | "checkpoints" | "checkpoint" | "human_view" | "law_epoch" | "laws" | "law_history" | "law_inspect";
 export interface McpToolOptions { observerMemory?: boolean; bookmarks?: boolean; fixedObserver?: string;
   faculties?: Partial<Record<Faculty, boolean>>; targetKinds?: Array<"entity" | "relationship" | "region" | "checkpoint" | "event">;
   compareKinds?: Array<"entity" | "relationship" | "region" | "checkpoint" | "universe"> }
@@ -31,6 +31,14 @@ export function registerMcpTools(server: McpServer, gateway: Gateway, options: M
   const enabled = (faculty: Faculty): boolean => options.faculties?.[faculty] !== false;
   const targetKinds = options.targetKinds ?? ["entity", "relationship", "region", "checkpoint", "event"];
   const scopedTargetSchema = targetSchema.extend({ kind: z.enum(targetKinds as [typeof targetKinds[number], ...typeof targetKinds[number][]]) });
+  if (enabled("law_epoch")) server.registerTool("law_epoch", { title: "Inspect the current Law Epoch", description: "Read the current epoch, next boundary, and active law-set hash.", inputSchema: z.object({}), outputSchema: genericOutput, annotations: readOnly },
+    async () => output(await gateway.get("/api/law-epoch"), "Current Law Evolution epoch and next authoritative boundary."));
+  if (enabled("laws")) server.registerTool("laws", { title: "Inspect active laws", description: "Read current effective law parameters and evolved-law records.", inputSchema: z.object({}), outputSchema: genericOutput, annotations: readOnly },
+    async () => output(await gateway.get("/api/laws"), "Current active Law Evolution manifest."));
+  if (enabled("law_history")) server.registerTool("law_history", { title: "Inspect law history", description: "Read immutable Law Evolution birth records.", inputSchema: z.object({}), outputSchema: genericOutput, annotations: readOnly },
+    async () => { const result=await gateway.get("/api/laws"); return output({ history: result.history ?? [] }, `${result.history?.length ?? 0} evolved laws.`); });
+  if (enabled("law_inspect")) server.registerTool("law_inspect", { title: "Inspect an evolved law", description: "Read one immutable evolved-law record by stable law ID.", inputSchema: z.object({ id: z.string().regex(/^law-[a-zA-Z0-9-]+$/) }), outputSchema: genericOutput, annotations: readOnly },
+    async ({id}) => output(await gateway.get(`/api/law/${encodeURIComponent(id)}`), `Evolved law ${id}.`));
   if (enabled("human_view")) server.registerTool("human_view", { title: "Look through the ProtoUniverse human view",
     description: "Render the current authoritative universe through the same dimension projection semantics as the human canvas. Returns a deterministic PNG, not a browser or desktop screenshot.",
     inputSchema: z.object({ seed, dimension: z.enum(DIMENSION_MODES).default("composite"), width: z.number().int().min(160).max(1600).default(1000),

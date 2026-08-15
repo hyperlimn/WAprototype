@@ -6,6 +6,14 @@ The universe's laws determine how those variables interact. Interactions change 
 
 The prototype investigates whether complex or unexpected structures can emerge from very small rule sets. It intentionally contains no goals, authored categories, predefined clusters, or decorative randomness.
 
+## Law Evolution
+
+Every 500,000 completed authoritative ticks, the universe derives a compact canonical cosmological vector, produces a SHA-256 Law Evolution Hash, decodes a bounded parameter-modulation genome, and installs the resulting effective law for the next tick. No executable code is generated.
+
+Tick 500,000 completes under epoch 0 laws. The first evolved law is then born atomically and first affects tick 500,001; the same rule repeats at later boundaries. Law Evolution uses save schema `protouniverse-save-state/2`. Version-1 saves below 500,000 can be deliberately loaded and migrated by the existing resume path. Version-1 saves at or beyond 500,000 fail closed, and existing artifacts are never rewritten.
+
+Normal machine observers can use `law_epoch`, `laws`, `law_history`, and `law_inspect`. Restricted Laboratory profiles do not receive these faculties unless `profile.lawEvolution` is explicitly enabled.
+
 ## Run
 
 ```sh

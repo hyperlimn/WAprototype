@@ -96,6 +96,7 @@ const occurrenceRecord = (record: Occurrence) => ({
   ...(record.parentEntityIds === undefined ? {} : { parentEntityIds: record.parentEntityIds }),
   ...(record.transition === undefined ? {} : { transition: record.transition }),
   ...(record.rupture === undefined ? {} : { rupture: record.rupture }),
+  ...(record.lawEvolutionId === undefined ? {} : { lawEvolutionId: record.lawEvolutionId }),
   x: number(record.x),
   y: number(record.y),
 });
@@ -161,6 +162,13 @@ export function buildWorldSnapshot(universe: Universe) {
       basePopulationCap: MAX_BASE_POPULATION,
       entityCount: entities.length,
       runtime: universe.runtime,
+      lawEvolution: {
+        engineVersion: universe.lawEvolution.activeManifest.engineVersion,
+        currentEpoch: universe.lawEvolution.completedEpoch,
+        epochInterval: universe.lawEvolution.epochInterval,
+        nextBoundaryTick: (universe.lawEvolution.completedEpoch + 1) * universe.lawEvolution.epochInterval,
+        manifestHash: universe.lawEvolution.activeManifest.manifestHash,
+      },
     },
     population: {
       initialCount: state.initialEntities,
@@ -261,6 +269,11 @@ export function buildWorldSnapshot(universe: Universe) {
     },
     ruptureCascadeSummary: ruptureCascadeDiagnostics,
     recentOccurrences: recentOccurrences.map(occurrenceRecord),
+    laws: {
+      effectiveParameters: universe.lawEvolution.activeManifest.effectiveParameters,
+      evolvedLawCount: universe.lawEvolution.records.length,
+      history: universe.lawEvolution.records,
+    },
     sampledEntities: [...sampledEntityMap.values()].map((entity) => entityRecord(entity, state.ticks)),
     sampledRelationships: [...sampledRelationshipMap.values()].map(relationshipRecord),
     entities: entities.map((entity) => ({

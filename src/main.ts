@@ -14,6 +14,7 @@ import { bindDimensionAutoCycle, type DimensionAutoCycle } from "./ui/dimensionA
 import { startMachineBridgeClient, type MachineBridgeStatus } from "./interface/machineBridgeClient";
 import { bindOperatorConsole } from "./ui/operatorConsole";
 import { bindEntityCloseup } from "./closeup/entityCloseupController";
+import { updateLawsInstrument } from "./ui/lawsInstrument";
 
 async function main(): Promise<void> {
 const canvas = document.querySelector<HTMLCanvasElement>("#universe")!;
@@ -27,6 +28,7 @@ const memoryMode = document.querySelector<HTMLElement>("#memoryMode")!;
 const memoryEvents = document.querySelector<HTMLElement>("#memoryEvents")!;
 const memoryLatest = document.querySelector<HTMLElement>("#memoryLatest")!;
 const simulationTicks = document.querySelector<HTMLElement>("#simulationTicks")!;
+const lawsInstrument = document.querySelector<HTMLElement>("#lawsInstrument")!;
 const bridgeSnapshotDuration = document.querySelector<HTMLElement>("#bridgeSnapshotDuration")!;
 const renderFrameDuration = document.querySelector<HTMLElement>("#renderFrameDuration")!;
 const renderedEdges = document.querySelector<HTMLElement>("#renderedEdges")!;
@@ -87,6 +89,7 @@ function replaceUniverse(seed: string): void {
   renderer.selectedRelationship = null;
   updateInspector(inspector, null);
   updateInstruments(instruments, universe);
+  updateLawsInstrument(lawsInstrument, universe);
   simulationTicks.textContent = universe.state.ticks.toLocaleString();
   updateOccurrences(occurrences, universe);
   const url = new URL(location.href);
@@ -220,6 +223,7 @@ function frame(now: number): void {
   instrumentTimer += elapsed;
   if (instrumentTimer > 1_000) {
     if (!instruments.closest(".sidebar-section")?.classList.contains("is-collapsed")) updateInstruments(instruments, universe);
+    if (!lawsInstrument.closest(".sidebar-section")?.classList.contains("is-collapsed")) updateLawsInstrument(lawsInstrument, universe);
     simulationTicks.textContent = universe.state.ticks.toLocaleString();
     updateOccurrences(occurrences, universe);
     bridgeSnapshotDuration.textContent = bridgeStatus.lastSnapshotDurationMs === null ? "—" : `${bridgeStatus.lastSnapshotDurationMs.toFixed(1)} ms`;
@@ -241,6 +245,7 @@ function frame(now: number): void {
 }
 
 updateInstruments(instruments, universe);
+updateLawsInstrument(lawsInstrument, universe);
 simulationTicks.textContent = universe.state.ticks.toLocaleString();
 updateOccurrences(occurrences, universe);
 startMachineBridgeClient(() => universe, (status) => {

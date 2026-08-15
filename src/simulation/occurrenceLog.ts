@@ -4,7 +4,8 @@ export type OccurrenceType =
   | "relationship-formed"
   | "relationship-destroyed"
   | "rupture"
-  | "dimensional-transition";
+  | "dimensional-transition"
+  | "law-evolution";
 
 export interface Occurrence {
   readonly sequence: number;
@@ -18,6 +19,7 @@ export interface Occurrence {
   readonly parentEntityIds?: readonly [number, number];
   readonly transition?: string;
   readonly rupture?: RuptureOccurrenceData;
+  readonly lawEvolutionId?: string;
 }
 
 export interface RuptureOccurrenceData {

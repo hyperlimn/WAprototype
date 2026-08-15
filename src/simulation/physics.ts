@@ -31,6 +31,7 @@ export function stepPhysics(
   bonds: Map<string, Bond>,
   world: WorldState,
   dt: number,
+  parameters: { baseForce: number; damping: number } = { baseForce: BASE_FORCE, damping: DAMPING },
 ): void {
   spatial.rebuild(entities);
   for (const bond of bonds.values()) bond.touched = false;
@@ -82,7 +83,7 @@ export function stepPhysics(
         ? Math.tanh((distance - preferredInteractionDistance(a, b)) / EQUILIBRIUM_WIDTH)
         : 1;
       const falloff = 1 - distance / INTERACTION_RADIUS;
-      const magnitude = BASE_FORCE * feedback * polarity * radialResponse * falloff * (1 + memory * 0.55) * dt;
+      const magnitude = parameters.baseForce * feedback * polarity * radialResponse * falloff * (1 + memory * 0.55) * dt;
       const fx = (dx / distance) * magnitude;
       const fy = (dy / distance) * magnitude;
       a.vx += fx;
@@ -100,8 +101,8 @@ export function stepPhysics(
   }
 
   for (const entity of entities) {
-    entity.vx *= Math.pow(DAMPING, dt);
-    entity.vy *= Math.pow(DAMPING, dt);
+    entity.vx *= Math.pow(parameters.damping, dt);
+    entity.vy *= Math.pow(parameters.damping, dt);
     const speed = Math.hypot(entity.vx, entity.vy);
     if (speed > MAX_SPEED) {
       entity.vx = (entity.vx / speed) * MAX_SPEED;

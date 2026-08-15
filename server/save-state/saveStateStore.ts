@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { link, mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { SAVE_STATE_SCHEMA_VERSION, validateContinuation, type SaveStateArtifact, type UniverseContinuationState } from "../../src/simulation/saveState.js";
+import { LEGACY_SAVE_STATE_SCHEMA_VERSION, SAVE_STATE_SCHEMA_VERSION, validateContinuation, type SaveStateArtifact, type UniverseContinuationState } from "../../src/simulation/saveState.js";
 
 const safe = (value: string): string => { if (!/^[a-zA-Z0-9._-]{1,120}$/.test(value)) throw new Error("Invalid save-state identifier"); return value; };
 const canonical = (value: unknown): string => JSON.stringify(value);
@@ -27,11 +27,11 @@ export class SaveStateStore {
     const file = fileOrId.endsWith(".json") || fileOrId.includes("/") || fileOrId.includes("\\") ? path.resolve(fileOrId)
       : universe ? this.file(universe, fileOrId) : (() => { throw new Error("A universe is required when loading by save ID"); })();
     const artifact = JSON.parse(await readFile(file, "utf8")) as SaveStateArtifact;
-    if (artifact.schemaVersion !== SAVE_STATE_SCHEMA_VERSION || artifact.id === undefined || artifact.universe === undefined || artifact.tick !== artifact.continuation?.tick)
+    if (![SAVE_STATE_SCHEMA_VERSION, LEGACY_SAVE_STATE_SCHEMA_VERSION].includes(artifact.schemaVersion as any) || artifact.id === undefined || artifact.universe === undefined || artifact.tick !== artifact.continuation?.tick)
       throw new Error("Malformed or incompatible save-state artifact");
-    validateContinuation(artifact.continuation, artifact.simulationVersion);
     if (continuationHash(artifact.continuation) !== artifact.checksum?.value) throw new Error("Save-state checksum mismatch");
-    return artifact;
+    const continuation = validateContinuation(artifact.continuation, artifact.simulationVersion);
+    return { ...artifact, continuation };
   }
   async list(universe: string): Promise<SaveStateSummary[]> {
     const directory = path.join(this.root, safe(universe), "save-states");
