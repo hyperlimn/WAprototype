@@ -8,6 +8,7 @@ import { assertTreeTerminationSafe, listWindowsProcesses, protectSupervisorAnces
 
 export const SUPERVISOR_HOST = "127.0.0.1";
 export const SUPERVISOR_PORT = 8790;
+export const PROTOUNIVERSE_UI_URL = "http://127.0.0.1:5173/";
 export const MANAGED_SERVICES = Object.freeze([
   { id: "frontend", label: "Frontend / Vite", url: "http://127.0.0.1:5173", port: 5173, healthPath: "/" },
   { id: "bridge-api", label: "Bridge + Operator API", url: "http://127.0.0.1:8787", port: 8787, healthPath: "/api/health" },
@@ -23,6 +24,7 @@ export interface SupervisorDependencies {
   terminate(child: ChildProcess): Promise<void>; delay(ms: number): Promise<void>;
   listProcesses?(): Promise<RuntimeProcess[]>; terminateProcessTree?(pid: number): Promise<void>;
   requestProcessTreeStop?(pid: number): Promise<void>;
+  openUrl?(url:string):Promise<void>;
   currentPid?: number; requireCompleteProcessProtection?: boolean; isSupervisorListening?(): Promise<boolean>;
 }
 
@@ -39,12 +41,14 @@ const terminateOwned = async (child: ChildProcess): Promise<void> => {
 const defaults: SupervisorDependencies = { spawn, isPortOpen: portOpen, request: fetch as SupervisorDependencies["request"], terminate: terminateOwned,
   delay: (ms) => new Promise((resolve) => setTimeout(resolve, ms)), listProcesses: listWindowsProcesses,
   requestProcessTreeStop: requestWindowsProcessTreeStop, terminateProcessTree: terminateWindowsProcessTree,
-  currentPid: process.pid, requireCompleteProcessProtection: process.platform === "win32", isSupervisorListening: () => portOpen(SUPERVISOR_PORT) };
+  currentPid: process.pid, requireCompleteProcessProtection: process.platform === "win32", isSupervisorListening: () => portOpen(SUPERVISOR_PORT),
+  openUrl:async(url)=>{if(process.platform!=="win32")return;await new Promise<void>((resolve,reject)=>{const child=spawn("rundll32.exe",["url.dll,FileProtocolHandler",url],{detached:true,stdio:"ignore",windowsHide:true});child.once("error",reject);child.once("spawn",()=>{child.unref();resolve();});});} };
 
 export class ServiceSupervisor {
   private readonly children = new Map<ManagedServiceId, ChildProcess>();
   private readonly runs: ServiceRun[] = [];
   private restartActive = false;
+  private initialBrowserHandled=false;
   private diagnosticsCache: { expiresAt: number; value: { duplicateProtoUniverseInstances: number; processDiscoveryWarning: string | null; manifestPersistence: unknown } } | null = null;
   constructor(readonly root = process.cwd(), readonly dependencies: SupervisorDependencies = defaults,
     readonly saveStates = new SaveStateStore(path.join(root, "data", "universes"))) {}
@@ -165,6 +169,8 @@ export class ServiceSupervisor {
       for (const service of MANAGED_SERVICES) if (!this.isOwned(service.id) && await this.dependencies.isPortOpen(service.port)) throw new Error(`${service.label} port is occupied by an unmanaged process`);
       if (!this.isOwned("bridge-api")) { this.spawnService("bridge-api", process.env, run); await this.waitServiceHealthy("bridge-api"); }
       if (!this.isOwned("frontend")) { this.spawnService("frontend", process.env, run); await this.waitServiceHealthy("frontend"); }
+      console.log(`ProtoUniverse UI: ${PROTOUNIVERSE_UI_URL}`);this.append(run,`ProtoUniverse UI: ${PROTOUNIVERSE_UI_URL}\n`);
+      if(!this.initialBrowserHandled){this.initialBrowserHandled=true;try{await this.dependencies.openUrl?.(PROTOUNIVERSE_UI_URL);this.append(run,"Opened ProtoUniverse UI in the default browser\n");}catch(error){const reason=error instanceof Error?error.message:String(error);console.warn(`Could not open ProtoUniverse UI (${reason}). Open ${PROTOUNIVERSE_UI_URL}`);this.append(run,`Browser open failed: ${reason}; open ${PROTOUNIVERSE_UI_URL}\n`);}}
       run.status = "completed"; run.phase = "healthy"; run.finishedAt = new Date().toISOString(); this.append(run, "Runtime stack healthy\n"); return { ...run };
     } catch (error) { this.fail(run, error); throw error; }
   }

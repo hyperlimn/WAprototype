@@ -108,6 +108,19 @@ input[type="range"] { width: 100%; height: 2px; accent-color: #749b99; }
 .save-state-details { min-width: 100%; margin: 6px 0 8px; padding: 7px; overflow: auto; border: 1px solid rgba(127, 170, 168, .15); color: #8fa5a2;
   background: #080d0f; white-space: pre; user-select: text; cursor: text; font: 9px/1.5 "IBM Plex Mono", "Cascadia Mono", Consolas, monospace; }
 #inspectorCloseup { width: 100%; margin-top: 8px; border-color: rgba(127, 170, 168, .35); }
+#createCounterfactual { width: 100%; margin-top: 8px; border-color: rgba(190, 132, 218, .45); color: #c9a7d8; }
+#highlightLiveTrail { width: 100%; margin-top: 8px; }
+.recorded-trail-stats { margin-top: 8px; border-left: 1px solid rgba(127,170,168,.25); padding-left: 8px; color: #829794; font-size: 9px; line-height: 1.55; }
+.counterfactual { --branch-accent: #be84da; }
+.counterfactual label { display: block; margin: 8px 0; color: #718987; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.counterfactual select { display: block; width: 100%; margin-top: 4px; border: 1px solid #38504f; padding: 5px; color: #bdcac8; background: #11191c; font: inherit; font-size: 10px; }
+.counterfactual-actions { display: flex; gap: 6px; margin-top: 9px; }
+.counterfactual-actions button { flex: 1; }
+.counterfactual-note { color: #7e918f; font-size: 9px; line-height: 1.5; white-space: pre-line; }
+.counterfactual-terminate { width: 100%; margin-top: 9px; border-color: rgba(185, 105, 125, .4); }
+.counterfactual .check { display: flex; align-items: center; gap: 6px; }
+.counterfactual-appearance { margin-top: 10px; border: 1px solid rgba(127,170,168,.16); padding: 7px; }
+.counterfactual-appearance summary { color: #8ca09d; cursor: pointer; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
 .inspector h3 { margin: 0 0 6px; color: #9aadaa; font-size: 10px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; }
 .operator-group input, .operator-group select { width: 100%; margin-top: 5px; border: 1px solid #38504f; border-radius: 2px; padding: 6px 7px; color: #bdcac8; background: #11191c; font: inherit; font-size: 10px; }
 .operator-actions { display: flex; flex-wrap: wrap; gap: 6px; }

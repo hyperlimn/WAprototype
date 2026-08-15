@@ -33,6 +33,7 @@ let browserConnected = false;
 let browserSocket: Duplex | null = null;
 const saveStates = new SaveStateStore();
 const pendingSaves = new Map<string, { resolve(value: UniverseContinuationState): void; reject(error: Error): void }>();
+const pendingCounterfactual = new Map<string, { resolve(value: unknown): void; reject(error: Error): void }>();
 const operator = new OperatorRoutes(() => ({ connected: browserConnected, seed: store.heartbeat?.seed ?? null,
   currentTick: store.heartbeat?.currentTick ?? null, provenance: store.heartbeat?.runtime ?? null,
   snapshotSerializationMs: store.lastSnapshotDurationMs, snapshotTick: store.snapshot?.metadata.currentTick ?? null,
@@ -51,6 +52,8 @@ const json = (response: ServerResponse, status: number, body: unknown): void => 
 const notFound = (response: ServerResponse, resource: string, id?: string): void =>
   json(response, 404, { error: "not_found", resource, ...(id === undefined ? {} : { id }) });
 const snapshotUnavailable = (response: ServerResponse): void => json(response, 503, { error: "snapshot_unavailable" });
+const readJson = async(request:IncomingMessage,maxBytes=16_384):Promise<unknown>=>new Promise((resolve,reject)=>{let size=0,body="";request.setEncoding("utf8");request.on("data",chunk=>{size+=Buffer.byteLength(chunk);if(size>maxBytes){reject(new Error("request_too_large"));request.destroy();return;}body+=chunk;});request.on("end",()=>{try{resolve(body?JSON.parse(body):{});}catch{reject(new Error("invalid_json"));}});request.on("error",reject);});
+const requestCounterfactual = async(operation:string,args:unknown):Promise<unknown>=>{if(!browserConnected||!browserSocket)throw new Error("authoritative_runtime_unavailable");const requestId=randomUUID();return new Promise((resolve,reject)=>{pendingCounterfactual.set(requestId,{resolve,reject});websocketText(browserSocket!,{type:"counterfactual-request",requestId,operation,args});setTimeout(()=>{if(pendingCounterfactual.delete(requestId))reject(new Error("counterfactual_timeout"));},15_000);});};
 
 const handleRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
   if (request.method === "OPTIONS") return json(response, 204, null);
@@ -58,6 +61,10 @@ const handleRequest = async (request: IncomingMessage, response: ServerResponse)
   if (await operator.handle(request, url, response, json)) return;
   if (await handleObserverMemoryRoute(request, url, response, observerMemory, json)) return;
   if (request.method === "POST" && url.pathname === "/api/perception/mark-observed") return handleMarkObserved(request, response, perception, json);
+  const counterfactualMatch=url.pathname.match(/^\/api\/counterfactual\/(create|status|compare|inspect|terminate)$/);
+  if(counterfactualMatch&&((request.method==="GET"&&["status","compare"].includes(counterfactualMatch[1]))||request.method==="POST")){
+    try{const args=request.method==="POST"?await readJson(request):Object.fromEntries(url.searchParams);const result=await requestCounterfactual(counterfactualMatch[1],args);return json(response,200,result);}catch(error){const message=error instanceof Error?error.message:"counterfactual_failed";return json(response,message==="authoritative_runtime_unavailable"?409:400,{error:"counterfactual_failed",message});}
+  }
   if (request.method === "POST" && url.pathname === "/api/save-state") {
     if (!browserConnected || !browserSocket) return json(response, 409, { error: "authoritative_runtime_unavailable" });
     try { assertCompatibleSaveProtocol(store.heartbeat); }
@@ -205,7 +212,8 @@ server.on("upgrade", (request: IncomingMessage, socket) => {
       try {
         const message = JSON.parse(payload.toString("utf8")) as { type?: string; requestId?: string; continuation?: UniverseContinuationState; error?: string; snapshot?: CanonicalSnapshot; occurrences?: OccurrenceRecord[]; observationMetrics?: { buildDurationMs: number; serializedBytes: number; entityCount: number; relationshipCount: number }; simulationTimings?: unknown } & Heartbeat;
         if (message.interfaceVersion !== INTERFACE_VERSION) continue;
-        if (message.type === "save-state-response" && message.requestId) {
+        if(message.type==="counterfactual-response"&&message.requestId){const pending=pendingCounterfactual.get(message.requestId);if(!pending)continue;pendingCounterfactual.delete(message.requestId);if((message as any).error)pending.reject(new Error(String((message as any).error)));else pending.resolve((message as any).result);}
+        else if (message.type === "save-state-response" && message.requestId) {
           const pending = pendingSaves.get(message.requestId); if (!pending) continue; pendingSaves.delete(message.requestId);
           if (message.continuation) pending.resolve(message.continuation); else pending.reject(new Error(message.error ?? "Save serialization failed"));
         } else if (message.type === "heartbeat") {
@@ -226,7 +234,7 @@ server.on("upgrade", (request: IncomingMessage, socket) => {
       } catch { /* Ignore malformed observation messages. */ }
     }
   });
-  const disconnected = () => { if (browserSocket === socket) { browserConnected = false; browserSocket = null; for (const pending of pendingSaves.values()) pending.reject(new Error("Authoritative runtime disconnected")); pendingSaves.clear(); } };
+  const disconnected = () => { if (browserSocket === socket) { browserConnected = false; browserSocket = null; for (const pending of pendingSaves.values()) pending.reject(new Error("Authoritative runtime disconnected")); pendingSaves.clear();for(const pending of pendingCounterfactual.values())pending.reject(new Error("Authoritative runtime disconnected"));pendingCounterfactual.clear(); } };
   socket.on("close", disconnected);
   socket.on("error", disconnected);
 });

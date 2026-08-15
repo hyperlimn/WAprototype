@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 import type { UniverseContinuationState } from "./saveState";
 import { compareEntityIdentity, compareRelationshipIdentity, compareStringEntryKey } from "./deterministicOrdering";
+import { sha256Hex } from "./sha256";
 
 const canonicalize = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -31,5 +31,5 @@ export function canonicalContinuationPayload(value: UniverseContinuationState): 
   });
 }
 export function deterministicStateHash(value: UniverseContinuationState): string {
-  return createHash("sha256").update(JSON.stringify(canonicalContinuationPayload(value))).digest("hex");
+  return sha256Hex(JSON.stringify(canonicalContinuationPayload(value)));
 }

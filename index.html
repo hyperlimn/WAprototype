@@ -71,6 +71,8 @@
           <label><span><span>Spatial relationship layer</span><input id="spatialRelationshipLayer" type="checkbox" checked /></span></label>
           <label><span><span>Influence layer</span><input id="influenceLayer" type="checkbox" checked /></span></label>
           <label><span><span>Field</span><input id="fieldLayer" type="checkbox" /></span></label>
+          <label><span><span>Primary Live Trails</span><input id="primaryLiveTrails" type="checkbox" /></span></label>
+          <label id="primaryTrailLengthLabel" hidden><span>Recorded samples <output id="primaryTrailLengthValue">24</output></span><input id="primaryTrailLength" type="range" min="4" max="64" value="24" step="4" /></label>
         </section>
 
         <section class="sidebar-section instruments" aria-label="World instruments">
@@ -83,6 +85,42 @@
           <h2>Entity Selection</h2>
           <div id="inspectorValues"><p class="empty">Select a point to inspect its immutable fingerprint and current state.</p></div>
           <button id="inspectorCloseup" type="button" hidden disabled>View Entity Up Close</button>
+          <button id="highlightLiveTrail" type="button" hidden disabled>Highlight Recorded Trail</button>
+          <div id="selectedLiveTrailStats" class="recorded-trail-stats" hidden></div>
+          <button id="createCounterfactual" type="button" hidden disabled>Create Counterfactual</button>
+        </section>
+        <section class="sidebar-section counterfactual" id="counterfactualPanel" aria-label="Counterfactual branch" hidden>
+          <h2>Counterfactual</h2>
+          <div id="counterfactualCreate" class="counterfactual-create" hidden>
+            <label>Target<select id="counterfactualTarget"><option value="entity">Entity</option><option value="cluster">Connected cluster</option></select></label>
+            <label>Intervention<select id="counterfactualIntervention"><option value="poke">Poke</option><option value="displace">Displace</option><option value="expand">Expand</option><option value="compress">Compress</option><option value="spin-clockwise">Spin CW</option><option value="spin-counterclockwise">Spin CCW</option><option value="sever">Sever Relationship</option></select></label>
+            <label>Direction<input id="counterfactualDirection" type="range" min="0" max="359" value="0" step="1" /><span id="counterfactualDirectionValue">0°</span></label>
+            <label>Magnitude<select id="counterfactualMagnitude"><option value="0.025">Subtle · 0.025</option><option value="0.075" selected>Moderate · 0.075</option><option value="0.175">Strong · 0.175</option></select></label>
+            <label>Poke multiplier<select id="counterfactualMultiplier"><option value="1">1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option><option value="20">20×</option></select></label>
+            <p id="counterfactualPreview" class="counterfactual-note"></p>
+            <div class="counterfactual-actions"><button id="counterfactualConfirm" type="button">Confirm</button><button id="counterfactualCancel" type="button">Cancel</button></div>
+          </div>
+          <div id="counterfactualLive" hidden>
+            <dl id="counterfactualValues"></dl>
+            <div class="counterfactual-actions"><button id="counterfactualPause" type="button">Pause Branch</button><button id="counterfactualOverlayToggle" type="button">Hide Overlay</button></div>
+            <details class="counterfactual-appearance"><summary>Overlay Appearance</summary>
+              <label>Preset<select id="counterfactualAppearancePreset"><option value="ember">Ember</option><option value="red">Red</option><option value="orange">Orange</option><option value="violet">Violet</option><option value="custom">Custom</option></select></label>
+              <label>Branch hue<input id="counterfactualHue" type="range" min="0" max="359" value="18" step="1" /></label>
+              <label>Overlay opacity<input id="counterfactualOpacity" type="range" min="0" max="1" value="0.5" step="0.01" /></label>
+              <label>Entity size<input id="counterfactualEntitySize" type="range" min="0.5" max="2" value="0.95" step="0.05" /></label>
+              <label>Relationship weight<input id="counterfactualRelationshipWeight" type="range" min="0.25" max="3" value="0.8" step="0.05" /></label>
+              <label>Relationship opacity<input id="counterfactualRelationshipOpacity" type="range" min="0" max="1" value="0.38" step="0.01" /></label>
+              <label>Connector opacity<input id="counterfactualConnectorOpacity" type="range" min="0" max="1" value="0.34" step="0.01" /></label>
+              <label>Halo intensity<input id="counterfactualHaloIntensity" type="range" min="0" max="1" value="0.18" step="0.01" /></label>
+              <label>Trail opacity<input id="counterfactualTrailOpacity" type="range" min="0" max="1" value="0.28" step="0.01" /></label>
+              <label>Trail weight<input id="counterfactualTrailWeight" type="range" min="0.25" max="3" value="0.65" step="0.05" /></label>
+              <label>Trail samples<input id="counterfactualTrailSamples" type="range" min="2" max="32" value="10" step="1" /></label>
+              <label class="check"><input id="counterfactualTrails" type="checkbox" checked /> Counterfactual trails</label>
+            </details>
+            <label class="check"><input id="counterfactualFollow" type="checkbox" /> Follow divergence</label>
+            <button id="counterfactualTerminate" class="counterfactual-terminate" type="button">Terminate Branch</button>
+          </div>
+          <p id="counterfactualMessage" class="counterfactual-note"></p>
         </section>
         <section class="sidebar-section occurrences" aria-label="Recent occurrences">
           <h2>Occurrences</h2><ol id="occurrences"><li class="empty">No occurrences recorded.</li></ol>

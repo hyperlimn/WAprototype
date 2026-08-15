@@ -13,10 +13,18 @@ export interface MachineBridgeStatus {
   lastSnapshotDurationMs: number | null;
   lastSnapshotBytes: number | null;
 }
+export interface CounterfactualMachineController {
+  machineCreate(args: unknown): unknown;
+  machineStatus(): unknown;
+  machineCompare(args: { entityId?: number; relationshipId?: string }): unknown;
+  machineInspect(args: { entityId?: number; relationshipId?: string }): unknown;
+  machineTerminate(): unknown;
+}
 
 export function startMachineBridgeClient(
   getUniverse: () => Universe,
   onStatus: (status: MachineBridgeStatus) => void,
+  counterfactual?: CounterfactualMachineController,
 ): () => void {
   let socket: WebSocket | null = null;
   let reconnectTimer = 0;
@@ -77,7 +85,8 @@ export function startMachineBridgeClient(
     });
     socket.addEventListener("message", (event) => {
       try {
-        const message = JSON.parse(String(event.data)) as { type?: string; requestId?: string };
+        const message = JSON.parse(String(event.data)) as { type?: string; requestId?: string; operation?:string; args?:unknown };
+        if(message.type==="counterfactual-request"&&message.requestId&&counterfactual){try{const result=message.operation==="create"?counterfactual.machineCreate(message.args):message.operation==="status"?counterfactual.machineStatus():message.operation==="compare"?counterfactual.machineCompare((message.args??{}) as {entityId?:number;relationshipId?:string}):message.operation==="inspect"?counterfactual.machineInspect((message.args??{}) as {entityId?:number;relationshipId?:string}):message.operation==="terminate"?counterfactual.machineTerminate():(()=>{throw new Error("Unsupported counterfactual operation");})();send({type:"counterfactual-response",interfaceVersion:MACHINE_INTERFACE_VERSION,requestId:message.requestId,result});}catch(error){send({type:"counterfactual-response",interfaceVersion:MACHINE_INTERFACE_VERSION,requestId:message.requestId,error:error instanceof Error?error.message:"Counterfactual request failed"});}return;}
         if (message.type !== "save-state-request" || !message.requestId) return;
         const universe = getUniverse();
         send({ type: "save-state-response", interfaceVersion: MACHINE_INTERFACE_VERSION, requestId: message.requestId,

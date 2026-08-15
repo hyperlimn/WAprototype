@@ -28,6 +28,10 @@ export class RelationshipLayer {
     this.membershipRevision++;
   }
 
+  /** Atomic authoritative membership removal used by bounded branch-only
+   * interventions. Ordinary tick workspaces observe the revision on next sync. */
+  sever(id:string):boolean{const existed=this.entities.delete(id);this.candidateSince.delete(id);if(existed)this.membershipRevision++;return existed;}
+
   update(baseEntities: Entity[], bonds: Map<string, Bond>, tick: number): void {
     for (const [id, bond] of bonds) {
       if (this.entities.has(id)) continue;

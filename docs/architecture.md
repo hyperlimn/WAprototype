@@ -52,6 +52,20 @@ Memory manifests use a per-path serialized atomic publisher: a unique temporary 
 
 Save compatibility rule: do not change the continuation schema, state meaning, PRNG semantics, or law order without an explicit version and migration decision.
 
+#### Counterfactual Overlay v1
+
+A counterfactual originates only at the immutable between-ticks continuation boundary: completed authoritative tick `T`, after every tick-T phase and any Law Evolution installation, before step `T → T+1`. `Universe.continuationState()` is cloned once and sent to a dedicated temporary Web Worker. The worker reconstructs a separately owned `Universe`, applies one validated velocity-only impulse, and advances toward primary target ticks without ever blocking the primary scheduler. Branch identity, correspondence, comparison metrics, overlay frames, and tombstones are observer/tool state; none enter primary continuation, Bridge publication, memory, saves, archives, MCP, or Laboratory.
+
+V1 permits one in-memory branch, owns no persistence, and has no tick-age limit. Resource limits pause the branch rather than throttling primary authority. The inherited universe seed and deep-cloned Law Evolution continuation remain the branch's causal inputs; session branch names never affect physics. The Canvas overlay is disposable presentation and cannot call simulation methods.
+
+Counterfactual Experimentation v2 adds bounded displacement, radial velocity, tangential spin, and atomic relationship sever interventions. All routes share one canonical `counterfactual-intervention/2` validator; final causal values, resolved one-hop membership, and relationship identity enter the intervention hash, while UI presets and multipliers do not. Relationship strength modulation remains deferred because the current lifecycle has no single authoritative modulation pathway whose isolated mutation would preserve all bond and relationship invariants.
+
+Normal MCP may relay explicit create/status/compare/inspect/terminate calls to the connected browser authority. The relay cannot accept continuation state, PRNG state, laws, paths, processes, or commands: origin capture occurs only inside the browser controller. One active branch, a create cooldown, worker resource caps, bounded comparison/inspection payloads, and twenty session-only terminated experiment summaries constrain experimentation. These summaries are not memory, archive, save, occurrence, or observer-memory records. Laboratory explicitly disables every counterfactual faculty by default.
+
+Counterfactual appearance preferences and both trail systems are observer-only presentation. Counterfactual trails retain a short bounded sequence of received overlay frames. Primary Live Trails begin only when enabled, sample current authoritative positions at a fixed tick interval into bounded typed buffers, and are cleared when disabled. They are recorded observations, not lifetime histories, and never enter continuation, hashes, snapshots, saves, memory, or archives.
+
+**Full Timeline Trails are deferred.** A future system may reconstruct or persist whole tick-space trajectories through deterministic replay in a dedicated Worker, a sampled/decimated trajectory cache, or explicit trajectory persistence. Current trail code has no dependency on that future facility and makes no historical-completeness claim.
+
 ### Observation and query
 
 `src/interface/worldSnapshot.ts` creates the canonical machine snapshot from a universe. Reusable diagnostics live in `src/observation/`, never `src/ui/`. `src/query/` and `src/perception/` consume snapshot records and archived evidence. `OBSERVATION_FIELD_CLASSIFICATION` records the known epistemic categories in preparation for a future field-classified schema; it does not yet drive filtering.
@@ -71,6 +85,8 @@ Save compatibility rule: do not change the continuation schema, state meaning, P
 ### Entity close-up morphology
 
 `src/closeup/` maps immutable fingerprints to a deterministic morphology genome, bounded topology and pattern features, then a lazily created Three.js close-up. Oscillation adds tick-derived visual breathing only. Connection particles are one buffered point per current relationship; their deterministic planes, shells, speed, state color, and glow are observer projections of current relationship measurements. Camera, animation, particles, and WebGL lifecycle are presentation concerns and must remain disposable and non-authoritative.
+
+Future close-up work may gradually turn connection particles into a relational portrait, but mappings must be justified against authoritative `RelationshipEntity` fields before adoption. Candidate investigations include dimensional mode for orbital inclination, instability or churn for eccentricity, relationship change rate for precession, a defensible polarity field for rotation direction, shared character for plane alignment, another measured relationship property for symmetry-axis latitude, and coherence/synergy for rotational coherence. V1 keeps the functioning particle visualization unchanged; these are design hypotheses, not current semantics.
 
 ### Bridge, operator tools, and supervisor
 

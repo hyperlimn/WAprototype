@@ -1,0 +1,21 @@
+import { performance } from "node:perf_hooks";
+import { readFile } from "node:fs/promises";
+import { createBranchAuthority } from "../src/counterfactual/branchAuthority.js";
+import { buildComparisonFrame } from "../src/counterfactual/correspondence.js";
+import { compareBranch, emptyMilestones } from "../src/counterfactual/divergence.js";
+import { COUNTERFACTUAL_INTERVENTION_VERSION } from "../src/counterfactual/types.js";
+import type { SaveStateArtifact } from "../src/simulation/saveState.js";
+import { Universe } from "../src/simulation/universe.js";
+
+const path=process.argv[2]??"data/universes/U0-000001/save-states/save-000000240240.json",ticks=Number(process.argv[3]??250);
+const artifact=JSON.parse(await readFile(path,"utf8")) as SaveStateArtifact,source=artifact.continuation;
+let started=performance.now();const captured=structuredClone(source),captureDurationMs=performance.now()-started;
+started=performance.now();const transferred=structuredClone(captured),structuredCloneDurationMs=performance.now()-started;
+started=performance.now();const branch=createBranchAuthority("B-0001",transferred,{schemaVersion:COUNTERFACTUAL_INTERVENTION_VERSION,kind:"entity-impulse",target:{entityId:0},deltaVelocity:{x:.015,y:0}}),branchReconstructionDurationMs=performance.now()-started;
+const baseline=new Universe(source.universe,structuredClone(source));started=performance.now();for(let i=0;i<ticks;i++)baseline.step();const baselineMs=performance.now()-started;
+started=performance.now();for(let i=0;i<ticks;i++)branch.universe.step();const branchStepMs=performance.now()-started;
+const primaryAtComparison=new Universe(source.universe,structuredClone(source));for(let i=0;i<ticks;i++)primaryAtComparison.step();
+started=performance.now();const primaryFrame=buildComparisonFrame(primaryAtComparison,branch.context),comparisonInputMs=performance.now()-started;
+started=performance.now();const overlay=compareBranch(branch.universe,primaryFrame,branch.context,branch.metadata.branchId,source.tick,emptyMilestones(),"RUNNING",0),comparisonDurationMs=performance.now()-started;
+const serializedBytes=JSON.stringify(branch.universe.continuationState()).length,estimatedWorkerBytes=serializedBytes*4+branch.universe.entities.length*512+branch.universe.relationshipLayer.entities.size*768;
+console.log(JSON.stringify({source:path,originTick:source.tick,entities:source.entities.length,relationships:source.relationships.length,ticks,captureDurationMs,structuredCloneDurationMs,branchReconstructionDurationMs,baselinePrimaryTicksPerSecond:ticks/baselineMs*1000,branchTicksPerSecond:ticks/branchStepMs*1000,comparisonInputMs,comparisonDurationMs,overlayEntities:overlay.entities.length,overlayRelationships:overlay.relationships.length,serializedContinuationBytes:serializedBytes,estimatedWorkerBytes,note:"Offline Node benchmark. Clone time approximates worker transfer; main-thread cadence impact requires browser profiling because production branch authority is a Web Worker."},null,2));

@@ -110,6 +110,12 @@ export class Universe {
       lawEvolution: this.lawEvolution });
   }
 
+  severRelationship(id:string):void{
+    if(!this.relationshipLayer.entities.has(id))throw new Error("Relationship does not exist");
+    this.relationshipLayer.sever(id);this.bonds.delete(id);this.state.activeBonds=this.bonds.size;this.state.activeRelationshipEntities=this.relationshipLayer.entities.size;
+    const relationships=[...this.relationshipLayer.entities.values()];this.state.spatiallyActiveRelationships=relationships.filter((item)=>item.spatialActive).length;this.state.influenceActiveRelationships=relationships.filter((item)=>item.influenceActive).length;this.state.dualActiveRelationships=relationships.filter((item)=>item.spatialActive&&item.influenceActive).length;this.state.influenceOnlyRelationships=relationships.filter((item)=>!item.spatialActive&&item.influenceActive).length;this.state.dormantRelationships=relationships.filter((item)=>!item.spatialActive&&!item.influenceActive).length;
+  }
+
   step(dt = 1): void {
     this.profiler.beginStep();
     let phaseStarted = this.profiler.clock();

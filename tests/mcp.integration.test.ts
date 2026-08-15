@@ -48,6 +48,9 @@ test("official v2 STDIO client navigates ProtoUniverse MCP tools and resources",
     assert.match(client.getInstructions() ?? "", /Begin unfamiliar investigations with orient/);
     const tools = await client.listTools(); assert.ok(tools.tools.some((item) => item.name === "orient")); assert.ok(tools.tools.some((item) => item.name === "mark_observed"));
     assert.ok(tools.tools.some((item) => item.name === "recall_observer_memory")); assert.ok(tools.tools.some((item) => item.name === "remember"));
+    for(const name of ["counterfactual_interventions","counterfactual_create","counterfactual_status","counterfactual_compare","counterfactual_inspect","counterfactual_terminate"])assert.ok(tools.tools.some(item=>item.name===name),`${name} should be available to the normal observer`);
+    const interventions=await client.callTool({name:"counterfactual_interventions",arguments:{}});assert.deepEqual((interventions.structuredContent as any).kinds,["entity-impulse","cluster-impulse","entity-displace","cluster-displace","cluster-expand","cluster-compress","cluster-spin-clockwise","cluster-spin-counterclockwise","relationship-sever"]);
+    const injection=await client.callTool({name:"counterfactual_create",arguments:{kind:"entity-impulse",entityId:0,x:.1,y:0,command:"rm",continuation:{}}});assert.equal(injection.isError,true,"unknown commands and caller-supplied continuation are schema errors");
     const templates = await client.listResourceTemplates(); assert.ok(templates.resourceTemplates.length >= 7);
     const universes = await client.callTool({ name: "list_universes", arguments: {} }); assert.equal((universes.structuredContent as any).resultCount, 1);
     const orient = await client.callTool({ name: "orient", arguments: { seed: identity.seed } }); assert.equal((orient.structuredContent as any).source.mode, "archived");

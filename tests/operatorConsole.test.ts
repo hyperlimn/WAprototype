@@ -205,6 +205,10 @@ test("initial managed stack requires semantic Bridge/API health and frontend HTT
   await assert.rejects(() => new ServiceSupervisor(process.cwd(), dependencies).startInitialStack(), /Frontend \/ Vite did not become application-ready/);
 });
 
+test("initial dev stack prints and opens the semantically healthy UI once without opening on managed restart",async()=>{const open=new Set<number>(),opened:string[]=[];const dependencies:SupervisorDependencies={spawn:((_command,args)=>{const child=new FakeChild() as unknown as ChildProcess;open.add((args as readonly string[]).some(arg=>arg.endsWith("index.ts"))?8787:5173);return child;}) as typeof spawn,isPortOpen:async port=>open.has(port),request:async url=>url.endsWith("/api/health")?response({service:"bridge-api",ready:true}):response({}),terminate:async()=>{},delay:async()=>{},openUrl:async url=>{opened.push(url);}};const supervisor=new ServiceSupervisor(process.cwd(),dependencies);const initial=await supervisor.startInitialStack();assert.deepEqual(opened,["http://127.0.0.1:5173/"]);assert.match(initial.output,/ProtoUniverse UI: http:\/\/127\.0\.0\.1:5173\//);await supervisor.startOrRestart("service.bridge-api.restart");assert.equal(opened.length,1);});
+
+test("browser open failure is non-fatal and retains the UI URL",async()=>{const open=new Set<number>();const dependencies:SupervisorDependencies={spawn:((_command,args)=>{const child=new FakeChild() as unknown as ChildProcess;open.add((args as readonly string[]).some(arg=>arg.endsWith("index.ts"))?8787:5173);return child;}) as typeof spawn,isPortOpen:async port=>open.has(port),request:async url=>url.endsWith("/api/health")?response({service:"bridge-api",ready:true}):response({}),terminate:async()=>{},delay:async()=>{},openUrl:async()=>{throw new Error("no browser");}};const run=await new ServiceSupervisor(process.cwd(),dependencies).startInitialStack();assert.equal(run.status,"completed");assert.match(run.output,/Browser open failed: no browser; open http:\/\/127\.0\.0\.1:5173\//);});
+
 test("an open Bridge/API port without semantic readiness is rejected", async () => {
   let spawned = false;
   const dependencies: SupervisorDependencies = {

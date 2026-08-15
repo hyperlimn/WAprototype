@@ -15,6 +15,8 @@ import { startMachineBridgeClient, type MachineBridgeStatus } from "./interface/
 import { bindOperatorConsole } from "./ui/operatorConsole";
 import { bindEntityCloseup } from "./closeup/entityCloseupController";
 import { updateLawsInstrument } from "./ui/lawsInstrument";
+import { bindCounterfactualPanel } from "./ui/counterfactualPanel";
+import { bindPrimaryLiveTrails } from "./ui/primaryLiveTrails";
 
 async function main(): Promise<void> {
 const canvas = document.querySelector<HTMLCanvasElement>("#universe")!;
@@ -70,6 +72,8 @@ let schedulerTime = performance.now();
 let lastRenderTime = 0;
 let instrumentTimer = 0;
 let bridgeStatus: MachineBridgeStatus = { connected: false, lastPublishAt: null, lastSnapshotDurationMs: null, lastSnapshotBytes: null };
+const counterfactual = bindCounterfactualPanel({ getUniverse: () => universe, renderer, camera, isPrimaryPlaying: () => playing });
+const primaryTrails = bindPrimaryLiveTrails({ getUniverse: () => universe, renderer });
 const closeup = bindEntityCloseup({
   invitation: document.querySelector<HTMLButtonElement>("#closeupInvitation")!,
   closeup: document.querySelector<HTMLElement>("#entityCloseup")!,
@@ -83,8 +87,12 @@ const closeup = bindEntityCloseup({
 }, camera, renderer, dimensionSelector, autoCycle, () => universe);
 
 function replaceUniverse(seed: string): void {
+  counterfactual.terminate("primary session changed");
+  counterfactual.selectEntity(null);
+  primaryTrails.selectEntity(null);
   closeup.exit();
   universe = new Universe(seed);
+  primaryTrails.reset();
   renderer.selected = null;
   renderer.selectedRelationship = null;
   updateInspector(inspector, null);
@@ -153,11 +161,18 @@ canvas.addEventListener("pointerup", (event) => {
     const canvasY = event.clientY - bounds.top;
     const relationship = renderer.pickRelationship(canvasX, canvasY, universe);
     if (relationship) {
+      counterfactual.selectEntity(null);
+      counterfactual.selectRelationship(relationship.id);
+      primaryTrails.selectEntity(null);
       updateRelationshipInspector(inspector, relationship, [
         universe.entities[relationship.parentAId], universe.entities[relationship.parentBId],
       ]);
     } else {
-      updateInspector(inspector, renderer.pick(canvasX, canvasY, universe), universe.state.ticks);
+      counterfactual.selectRelationship(null);
+      const selected = renderer.pick(canvasX, canvasY, universe);
+      updateInspector(inspector, selected, universe.state.ticks);
+      counterfactual.selectEntity(selected?.creationIndex ?? null);
+      primaryTrails.selectEntity(selected?.creationIndex ?? null);
     }
   }
 });
@@ -195,6 +210,7 @@ function simulationPump(): void {
     let steps = 0;
     while (tickCredit >= 1 && steps < 256 && performance.now() - batchStart < 8) {
       universe.step(1);
+      primaryTrails.sample();
       tickCredit--;
       steps++;
     }
@@ -219,6 +235,8 @@ function frame(now: number): void {
   }
   lastRenderTime = now;
   renderer.draw(universe);
+  primaryTrails.update();
+  counterfactual.update();
   closeup.update();
   instrumentTimer += elapsed;
   if (instrumentTimer > 1_000) {
@@ -251,7 +269,7 @@ updateOccurrences(occurrences, universe);
 startMachineBridgeClient(() => universe, (status) => {
   bridgeStatus = status;
   bridgeConnection.textContent = status.connected ? "connected" : "disconnected";
-});
+}, counterfactual);
 window.setInterval(() => {
   bridgeLastPublish.textContent = bridgeStatus.lastPublishAt === null
     ? "never" : `${((performance.now() - bridgeStatus.lastPublishAt) / 1000).toFixed(1)}s`;

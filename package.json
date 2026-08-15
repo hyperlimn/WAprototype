@@ -19,7 +19,8 @@
     "help": "tsx scripts/help.ts",
     "benchmark:optimization": "node --expose-gc --import tsx scripts/benchmark-optimization.ts",
     "benchmark:law-evolution": "node --import tsx scripts/benchmark-law-evolution.ts",
-    "test": "tsc -p tsconfig.test.json && node .test-dist/tests/memory.test.js && node .test-dist/tests/observerMemory.test.js && node .test-dist/tests/mcp.integration.test.js && node .test-dist/tests/laboratory.test.js && node .test-dist/tests/dimensionProjection.test.js && node .test-dist/tests/dimensionAutoCycle.test.js && node .test-dist/tests/oscillation.test.js && node .test-dist/tests/humanView.test.js && tsx tests/saveState.test.ts && tsx tests/operatorConsole.test.ts && tsx tests/entityCloseup.test.ts && tsx tests/architectureFoundation.test.ts && tsx tests/optimization.test.ts && tsx tests/lawEvolution.test.ts && node tests/observerLoop.test.mjs && node scripts/clean-test-build.mjs",
+    "benchmark:counterfactual": "node --import tsx scripts/benchmark-counterfactual.ts",
+    "test": "tsc -p tsconfig.test.json && node .test-dist/tests/memory.test.js && node .test-dist/tests/observerMemory.test.js && node .test-dist/tests/mcp.integration.test.js && node .test-dist/tests/laboratory.test.js && node .test-dist/tests/dimensionProjection.test.js && node .test-dist/tests/dimensionAutoCycle.test.js && node .test-dist/tests/oscillation.test.js && node .test-dist/tests/humanView.test.js && tsx tests/saveState.test.ts && tsx tests/operatorConsole.test.ts && tsx tests/entityCloseup.test.ts && tsx tests/architectureFoundation.test.ts && tsx tests/optimization.test.ts && tsx tests/lawEvolution.test.ts && tsx tests/counterfactual.test.ts && node tests/observerLoop.test.mjs && node scripts/clean-test-build.mjs",
     "build": "tsc && tsc -p tsconfig.server.json && vite build",
     "preview": "vite preview"
   },

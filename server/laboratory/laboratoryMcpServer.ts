@@ -21,7 +21,8 @@ export function buildLaboratoryMcpServer(experiment: ExperimentDefinition, autho
       compare: profile.comparison, changes: profile.changes ?? profile.comparison, list_universes: profile.catalogs ?? true,
       history: profile.history.enabled && profile.events, checkpoints: profile.checkpoints, checkpoint: profile.checkpoints,
       human_view: profile.humanView === true, law_epoch: profile.lawEvolution === true, laws: profile.lawEvolution === true,
-      law_history: profile.lawEvolution === true && profile.history.enabled, law_inspect: profile.lawEvolution === true },
+      law_history: profile.lawEvolution === true && profile.history.enabled, law_inspect: profile.lawEvolution === true,
+      counterfactual_interventions:false,counterfactual_create:false,counterfactual_status:false,counterfactual_compare:false,counterfactual_inspect:false,counterfactual_terminate:false },
     targetKinds: presentMoment ? ["entity", "relationship", "region"] : undefined,
     compareKinds: presentMoment ? ["entity", "relationship", "region"] : undefined });
   registerMcpResources(server, gateway, { bookmarks: profile.bookmarks, universe: profile.catalogs ?? true,

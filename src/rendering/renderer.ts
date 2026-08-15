@@ -6,6 +6,10 @@ import type { RelationshipEntity } from "../simulation/relationshipEntity";
 import { EVENT_TRACE_DURATION_TICKS, type Occurrence } from "../simulation/occurrenceLog";
 import { baseRelationOpacity, higherOrderOpacity, projectEntity, projectRelationship, type DimensionMode } from "./dimensionProjection";
 import { oscillationAtTick } from "../simulation/oscillation";
+import type { BranchFrame } from "../counterfactual/types";
+import type { CounterfactualAppearance } from "../counterfactual/appearance";
+import { PRIMARY_TRAIL_LIMITS, type PrimaryLiveTrailRecorder } from "./liveTrails";
+import { CounterfactualTrailStore } from "./counterfactualTrails";
 
 export class Renderer {
   private context: CanvasRenderingContext2D;
@@ -23,6 +27,11 @@ export class Renderer {
   showDimensionalTransitions = true;
   dimension: DimensionMode = "composite";
   readonly profile = { frameTimeMs: 0, relationshipCandidates: 0, renderedEdges: 0 };
+  counterfactualOverlay: { frame: BranchFrame; appearance: CounterfactualAppearance } | null = null;
+  primaryLiveTrails: PrimaryLiveTrailRecorder | null = null;
+  highlightSelectedLiveTrail = false;
+  readonly counterfactualProfile = { entitiesReceived: 0, relationshipsReceived: 0, visibleDivergentEntities: 0, maximumScreenDisplacement: 0, lastFrameTick: -1 };
+  private readonly counterfactualTrails = new CounterfactualTrailStore();
 
   constructor(readonly canvas: HTMLCanvasElement, readonly camera: Camera) {
     const context = canvas.getContext("2d");
@@ -102,6 +111,7 @@ export class Renderer {
 
     if (this.dimension !== "composite") renderedEdges += this.drawProjectedRelationships(universe, width, height);
     const lineageEntities = this.dimension === "lineage" ? this.drawLineage(universe, width, height) : new Set<number>();
+    if(this.primaryLiveTrails?.enabled)this.drawPrimaryLiveTrails(width,height);
 
     for (const entity of universe.entities) {
       if (!this.entityVisible(entity)) continue;
@@ -186,9 +196,51 @@ export class Renderer {
       }
     }
     if (this.observationMode && this.dimension === "composite") this.drawOccurrenceTraces(universe, width, height);
+    if (this.counterfactualOverlay) this.drawCounterfactualOverlay(this.counterfactualOverlay.frame, this.counterfactualOverlay.appearance, width, height);
     this.profile.frameTimeMs = performance.now() - frameStarted;
     this.profile.relationshipCandidates = universe.relationshipLayer.entities.size;
     this.profile.renderedEdges = renderedEdges;
+  }
+
+  clearCounterfactualTrails():void{this.counterfactualTrails.clear();}
+  clearCounterfactualPresentation():void{this.clearCounterfactualTrails();Object.assign(this.counterfactualProfile,{entitiesReceived:0,relationshipsReceived:0,visibleDivergentEntities:0,maximumScreenDisplacement:0,lastFrameTick:-1});}
+
+  private drawCounterfactualOverlay(frame: BranchFrame, appearance: CounterfactualAppearance, width: number, height: number): void {
+    const ctx=this.context,alpha=appearance.overlayOpacity,hue=appearance.hue,saturation=appearance.saturation,lightness=appearance.lightness;ctx.save();
+    this.counterfactualProfile.entitiesReceived=frame.entities.length;this.counterfactualProfile.relationshipsReceived=frame.relationships.length;this.counterfactualProfile.lastFrameTick=frame.tick;this.counterfactualProfile.visibleDivergentEntities=0;this.counterfactualProfile.maximumScreenDisplacement=0;
+    const trailsActive=appearance.trailsEnabled&&frame.entities.length<=1_000;if(trailsActive)this.counterfactualTrails.update(frame,appearance.trailSamples);else if(!appearance.trailsEnabled)this.clearCounterfactualTrails();
+    if(trailsActive){for(const samples of this.counterfactualTrails.entries()){if(samples.length<2)continue;for(let index=1;index<samples.length;index++){const prior=samples[index-1],sample=samples[index],[ax,ay]=this.camera.worldToScreen(prior.x,prior.y,width,height),[bx,by]=this.camera.worldToScreen(sample.x,sample.y,width,height);ctx.strokeStyle=`hsla(${hue},${saturation}%,${lightness}%,${appearance.trailOpacity*alpha*index/(samples.length-1)})`;ctx.lineWidth=appearance.trailWeight;ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.stroke();}}}
+    for(const relationship of frame.relationships){
+      if(relationship.correspondence==="shared-equal")continue;
+      const [ax,ay]=this.camera.worldToScreen(relationship.ax,relationship.ay,width,height),[bx,by]=this.camera.worldToScreen(relationship.bx,relationship.by,width,height);
+      if(!this.segmentVisible(ax,ay,bx,by,width,height))continue;
+      ctx.strokeStyle=relationship.correspondence==="primary-only"?`rgba(105,150,149,${appearance.relationshipOpacity*alpha})`:`hsla(${hue},${saturation}%,${lightness}%,${appearance.relationshipOpacity*alpha})`;
+      ctx.lineWidth=appearance.relationshipWeight*(relationship.correspondence==="shared-divergent-state"?1.25:1);ctx.setLineDash(relationship.correspondence==="primary-only"?[3,4]:[]);
+      ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    for(const entity of frame.entities){
+      const [x,y]=this.camera.worldToScreen(entity.x,entity.y,width,height);if(x<-10||y<-10||x>width+10||y>height+10)continue;
+      let displacement=Infinity;
+      if(entity.primaryX!==null&&entity.primaryY!==null){const [px,py]=this.camera.worldToScreen(entity.primaryX,entity.primaryY,width,height);displacement=Math.hypot(x-px,y-py);this.counterfactualProfile.maximumScreenDisplacement=Math.max(this.counterfactualProfile.maximumScreenDisplacement,displacement);
+        if(displacement>=1.5)this.counterfactualProfile.visibleDivergentEntities++;
+        if(displacement>2){ctx.strokeStyle=`hsla(${hue},${saturation}%,${lightness}%,${appearance.connectorOpacity*alpha})`;ctx.lineWidth=.7;ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(x,y);ctx.stroke();}
+      }
+      if(displacement<1.5&&entity.correspondence!=="branch-only")continue;
+      ctx.fillStyle=`hsla(${hue},${saturation}%,${lightness}%,${(entity.correspondence==="branch-only"?.72:.58)*alpha})`;
+      ctx.beginPath();ctx.arc(x,y,2.2*appearance.entitySize,0,Math.PI*2);ctx.fill();
+      if(displacement>10&&appearance.haloIntensity>0){ctx.strokeStyle=`hsla(${hue},${saturation}%,${Math.min(85,lightness+8)}%,${appearance.haloIntensity*alpha})`;ctx.lineWidth=.7;ctx.beginPath();ctx.arc(x,y,4.4*appearance.entitySize,0,Math.PI*2);ctx.stroke();}
+    }
+    ctx.restore();
+  }
+
+  private drawPrimaryLiveTrails(width:number,height:number):void{
+    const ctx=this.context,selectedId=this.highlightSelectedLiveTrail?this.selected?.creationIndex:null;let segments=0;ctx.save();
+    for(const trail of this.primaryLiveTrails!.trails()){
+      if(trail.points.length<2)continue;const selected=selectedId===trail.entityId,dimmed=selectedId!==null&&!selected;ctx.strokeStyle=selected?"rgba(205,220,215,.78)":`rgba(126,161,158,${dimmed?.045:.13})`;ctx.lineWidth=selected?1.25:.55;ctx.beginPath();
+      for(let index=0;index<trail.points.length;index++){const point=trail.points[index],[x,y]=this.camera.worldToScreen(point.x,point.y,width,height);if(index===0)ctx.moveTo(x,y);else{ctx.lineTo(x,y);segments++;if(segments>=PRIMARY_TRAIL_LIMITS.maximumRenderedSegments)break;}}
+      ctx.stroke();if(selected){const current=trail.points.at(-1)!,position=this.camera.worldToScreen(current.x,current.y,width,height);ctx.fillStyle="rgba(220,232,228,.9)";ctx.beginPath();ctx.arc(position[0],position[1],3.2,0,Math.PI*2);ctx.fill();}if(segments>=PRIMARY_TRAIL_LIMITS.maximumRenderedSegments)break;
+    }ctx.restore();
   }
 
   private drawProjectedRelationships(universe: Universe, width: number, height: number): number {
