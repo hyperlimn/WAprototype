@@ -10,6 +10,7 @@ export interface Heartbeat {
   currentTick: number;
   entityCount: number;
   runtime?: RuntimeProvenance;
+  saveStateSchemaVersion?: string;
 }
 
 export interface CanonicalSnapshot extends QuerySnapshot {

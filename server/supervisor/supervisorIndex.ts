@@ -16,8 +16,11 @@ const server = createServer(async (request, response) => {
   }
   if (request.method === "POST" && request.url === "/api/supervisor/run") {
     try { const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(chunk); const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+      if (body.commandId === "universe.delete-save") { const run = await supervisor.deleteSave(body.commandId, body.saveId);
+        return run.status === "completed" ? json(response, 200, { run }) : json(response, 409, { error: "save_delete_refused", message: run.error ?? "Save deletion failed", run }); }
       const run = body.commandId === "runtime.restart-all" ? supervisor.beginRestartAll(body.commandId)
-        : body.commandId === "runtime.resume-save" ? supervisor.beginResumeSave(body.commandId, body.saveId) : await supervisor.startOrRestart(body.commandId);
+        : body.commandId === "runtime.resume-save" ? supervisor.beginResumeSave(body.commandId, body.saveId)
+        : await supervisor.startOrRestart(body.commandId);
       return json(response, 202, { run }); }
     catch (error) { return json(response, 409, { error: "service_action_refused", message: error instanceof Error ? error.message : "refused" }); }
   }

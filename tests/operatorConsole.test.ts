@@ -11,6 +11,7 @@ import { ServiceSupervisor, SUPERVISOR_HOST, type SupervisorDependencies } from 
 import { createServer } from "node:http";
 import { corsHeaders } from "../server/cors.js";
 import type { SaveStateStore } from "../server/save-state/saveStateStore.js";
+import { requestOperatorJson } from "../src/ui/operatorApi.js";
 
 class FakeChild extends EventEmitter { stdout = new PassThrough(); stderr = new PassThrough(); pid = 1234; exitCode: number | null = null; kill() { return true; } }
 
@@ -109,7 +110,9 @@ test("an open Bridge/API port without semantic readiness is rejected", async () 
     request: async () => response({ service: "bridge-api", ready: false }),
     terminate: async () => {}, delay: async () => {},
   };
-  await assert.rejects(() => new ServiceSupervisor(process.cwd(), dependencies).startInitialStack(), /Bridge \+ Operator API did not become application-ready/);
+  const supervisor = new ServiceSupervisor(process.cwd(), dependencies);
+  await assert.rejects(() => supervisor.startInitialStack(), /Bridge \+ Operator API did not become application-ready/);
+  assert.equal(supervisor.list()[0].status, "failed", "failed startup must not remain reported as running");
 });
 
 test("selected-save resume resolves an ID internally, preserves the artifact, and retains its log", async () => {
@@ -139,6 +142,24 @@ test("selected-save resume resolves an ID internally, preserves the artifact, an
   assert.equal(supervisor.list().find((run) => run.id === started.id)?.output, finished.output);
 });
 
+test("selected-save deletion is ID-only, preserves other saves, and refuses the active resume source", async () => {
+  const deleted:string[]=[], artifact={id:"save-000000000111",universe:"U0-delete",tick:111,createdAt:"2026-01-01T00:00:00.000Z",simulationVersion:"test",checksum:{algorithm:"sha256",value:"hash"},continuation:{}};
+  const store={delete:async(universe:string,id:string)=>{deleted.push(`${universe}:${id}`);return{id,universe,tick:111,createdAt:artifact.createdAt,checksum:"hash",simulationVersion:"test",resumable:true,compatibility:"compatible",reason:null};},list:async()=>[],load:async()=>artifact,file:()=>"canonical"} as unknown as SaveStateStore;
+  let activeSource:string|null=null;const dependencies:SupervisorDependencies={spawn:(()=>new FakeChild() as unknown as ChildProcess) as typeof spawn,isPortOpen:async()=>false,terminate:async()=>{},delay:async()=>{},
+    request:async()=>response({connected:true,seed:artifact.universe,currentTick:900,runtime:activeSource?{mode:"resumed",sourceSaveId:activeSource}:{mode:"fresh"}})};
+  const supervisor=new ServiceSupervisor(process.cwd(),dependencies,store);
+  await assert.rejects(()=>supervisor.deleteSave("universe.delete-save","../secret.json"),/Invalid save-state ID/);assert.equal(deleted.length,0);
+  const completed=await supervisor.deleteSave("universe.delete-save",artifact.id);assert.equal(completed.status,"completed");assert.deepEqual(deleted,[`${artifact.universe}:${artifact.id}`]);assert.match(completed.output,/Delete save-[\s\S]*Deleted save-[\s\S]*Save library refreshed/);
+  activeSource=artifact.id;const refused=await supervisor.deleteSave("universe.delete-save",artifact.id);assert.equal(refused.status,"failed");assert.match(refused.output,/active runtime continuation source/);assert.equal(deleted.length,1);
+});
+
+test("Save Library exposes selectable copyable details, horizontal overflow, confirmation, and refresh-after-delete",async()=>{
+  const [html,css,ui]=await Promise.all([readFile(path.resolve("index.html"),"utf8"),readFile(path.resolve("src/style.css"),"utf8"),readFile(path.resolve("src/ui/operatorConsole.ts"),"utf8")]);
+  assert.match(html,/id="operatorSaveDetails"[^>]*tabindex="0"/);assert.match(html,/id="operatorCopySave"/);assert.match(html,/id="operatorDeleteSave"/);
+  assert.match(css,/\.save-state-scroll[^}]*overflow-x: auto/);assert.match(css,/\.save-state-details[^}]*user-select: text/);assert.match(css,/white-space: pre/);
+  assert.match(ui,/confirm\(`Delete \$\{save\.id\}/);assert.match(ui,/commandId: definition\.id, saveId: save\.id/);assert.match(ui,/await loadSaves\(\)/);assert.match(ui,/navigator\.clipboard\.writeText\(saveDetails\.textContent/);
+});
+
 test("operator JSON preflight explicitly allows the Content-Type request header", async () => {
   const [bridgeSource, supervisorSource] = await Promise.all([readFile(path.resolve("server/index.ts"), "utf8"), readFile(path.resolve("server/supervisor/supervisorIndex.ts"), "utf8")]);
   assert.match(bridgeSource, /corsHeaders\("GET, POST, PATCH, OPTIONS"\)/); assert.match(supervisorSource, /corsHeaders\("GET, POST, OPTIONS"\)/);
@@ -152,4 +173,23 @@ test("operator JSON preflight explicitly allows the Content-Type request header"
     assert.equal(response.status, 204); assert.equal(response.headers.get("access-control-allow-headers"), "Content-Type");
     assert.match(response.headers.get("access-control-allow-methods") ?? "", /POST/);
   } finally { await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); }
+});
+
+test("GUI API errors distinguish transport, validation, and server failures", async () => {
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = (async () => { throw new TypeError("connection refused"); }) as typeof fetch;
+    await assert.rejects(() => requestOperatorJson("http://127.0.0.1:8790/api/supervisor", "/run", "supervisor"), /Supervisor transport unavailable: connection refused/);
+    globalThis.fetch = (async () => new Response(JSON.stringify({ error: "save_schema_mismatch", message: "browser is v1; bridge is v2" }),
+      { status: 409, headers: { "Content-Type": "application/json" } })) as typeof fetch;
+    await assert.rejects(() => requestOperatorJson("http://127.0.0.1:8787/api/operator", "/run", "bridge"), /Bridge\/API 409: browser is v1; bridge is v2/);
+    globalThis.fetch = (async () => new Response("not-json", { status: 502 })) as typeof fetch;
+    await assert.rejects(() => requestOperatorJson("http://127.0.0.1:8790/api/supervisor", "/run", "supervisor"), /invalid HTTP 502 response/);
+  } finally { globalThis.fetch = original; }
+});
+
+test("completed GUI save triggers an immediate Save-State Library refresh", async () => {
+  const source = await readFile(path.resolve("src/ui/operatorConsole.ts"), "utf8");
+  assert.match(source, /run\.commandId === "universe\.save" && run\.status === "completed"/);
+  assert.match(source, /void loadSaves\(\)\.catch/);
 });

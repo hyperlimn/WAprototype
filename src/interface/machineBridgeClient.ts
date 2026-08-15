@@ -1,6 +1,7 @@
 import type { Universe } from "../simulation/universe";
 import { SIMULATION_VERSION } from "../simulation/universe";
 import { buildWorldSnapshot } from "./worldSnapshot";
+import { SAVE_STATE_SCHEMA_VERSION } from "../simulation/saveState";
 
 export const MACHINE_INTERFACE_VERSION = "protouniverse-machine-interface/5";
 export const HEARTBEAT_INTERVAL_MS = 1_000;
@@ -36,7 +37,8 @@ export function startMachineBridgeClient(
   const heartbeat = () => {
     const universe = getUniverse();
     send({ type: "heartbeat", interfaceVersion: MACHINE_INTERFACE_VERSION, simulationVersion: SIMULATION_VERSION,
-      seed: universe.seed, currentTick: universe.state.ticks, entityCount: universe.entities.length, runtime: universe.runtime });
+      seed: universe.seed, currentTick: universe.state.ticks, entityCount: universe.entities.length, runtime: universe.runtime,
+      saveStateSchemaVersion: SAVE_STATE_SCHEMA_VERSION });
   };
   const snapshot = () => {
     if (socket?.readyState !== WebSocket.OPEN) return;

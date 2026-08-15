@@ -6,7 +6,7 @@ import { CloseupSession, type ExplorerObserverState } from "../src/closeup/close
 import { deriveIntrinsicOscillation, oscillationAtTick } from "../src/simulation/oscillation.js";
 import { deriveSymmetryCameraBasis } from "../src/closeup/symmetryCamera.js";
 import { morphologyInspectorEntries } from "../src/closeup/morphologyInspector.js";
-import { buildConnectionParticleData } from "../src/closeup/connectionParticles.js";
+import { buildConnectionParticleData, updateConnectionParticlePositions } from "../src/closeup/connectionParticles.js";
 import { Camera } from "../src/rendering/camera.js";
 import { CLOSEUP_INVITATION_ZOOM } from "../src/closeup/entityCloseupController.js";
 
@@ -32,11 +32,22 @@ const inspector = Object.fromEntries(morphologyInspectorEntries(a).map((entry) =
 assert.equal(inspector.Scaffold, a.symmetryFamily); assert.equal(inspector["Primary order"], String(a.primarySymmetry));
 assert.equal(inspector["Secondary motif"], a.secondaryMotif); assert.equal(inspector.Rings, String(a.ringCount));
 assert.equal(inspector.Asymmetry, a.asymmetry.toFixed(4)); assert.equal(inspector.Roughness, a.materialRoughness.toFixed(3));
-const connections = Array.from({ length: 1_000 }, (_, index) => ({ id: `${index}:${index + 1}`, state: index % 4 === 0 ? "dual" as const
-  : index % 4 === 1 ? "spatial" as const : index % 4 === 2 ? "influence" as const : "dormant" as const }));
-const particles = buildConnectionParticleData(connections), repeatedParticles = buildConnectionParticleData(connections);
+const connections = Array.from({ length: 1_000 }, (_, index) => ({ id: `${index}:${index + 1}`, fingerprint: (index.toString(16).padStart(8,"0")+first).slice(0,64),
+  state: index % 4 === 0 ? "dual" as const : index % 4 === 1 ? "spatial" as const : index % 4 === 2 ? "influence" as const : "dormant" as const,
+  distance: 20 + index % 145, relationshipStrength: (index % 101)/100, coherence: ((index*7)%101)/100, synergy: ((index*13)%101)/100,
+  connectedDirection: index * .173 }));
+const connectionAuthority=JSON.stringify(connections),particles = buildConnectionParticleData(connections), repeatedParticles = buildConnectionParticleData(connections);
 assert.equal(particles.ids.length, connections.length); assert.equal(particles.positions.length, connections.length * 3);
 assert.deepEqual(particles.positions, repeatedParticles.positions); assert.ok(particles.positions.byteLength <= connections.length * 3 * 4);
+assert.deepEqual(particles.orbitBasisU,repeatedParticles.orbitBasisU);assert.deepEqual(particles.angularSpeeds,repeatedParticles.angularSpeeds);
+assert.notEqual(particles.radii[0],particles.radii[1]);assert.notEqual(particles.phases[0],particles.phases[1]);assert.notEqual(particles.glowIntensities[0],particles.glowIntensities[1]);
+for(let index=0;index<particles.ids.length;index++){assert.ok(particles.radii[index]>=1.69999&&particles.radii[index]<=3.20001);assert.ok(particles.angularSpeeds[index]>=.01374&&particles.angularSpeeds[index]<=.11501);
+  assert.ok(particles.glowIntensities[index]>=.23999&&particles.glowIntensities[index]<=1.00001);assert.ok(particles.glowScales[index]>=.89999&&particles.glowScales[index]<=1.75001);assert.ok(Math.abs(particles.rotationDirections[index])===1);}
+const moved=updateConnectionParticlePositions(particles,12_000,new Float32Array(particles.positions.length));assert.notDeepEqual(moved,particles.positions);
+assert.equal(JSON.stringify(connections),connectionAuthority,"particle projection must not mutate relationship inputs");
+const changedCharacter=buildConnectionParticleData([{...connections[0],relationshipStrength:1,coherence:1,synergy:1}]);
+assert.equal(changedCharacter.phases[0],particles.phases[0]);assert.deepEqual(changedCharacter.orbitBasisU.slice(0,3),particles.orbitBasisU.slice(0,3));
+assert.ok(changedCharacter.angularSpeeds[0]>particles.angularSpeeds[0]);assert.ok(changedCharacter.glowIntensities[0]>particles.glowIntensities[0]);
 assert.equal(Camera.MAX_ZOOM, 12); assert.ok(CLOSEUP_INVITATION_ZOOM >= Camera.MAX_ZOOM * .85 && CLOSEUP_INVITATION_ZOOM < Camera.MAX_ZOOM);
 
 const surfaceSamples = (genome: typeof a): readonly [number, number][] => Array.from({ length: 128 }, (_, index) => {
@@ -70,7 +81,7 @@ assert.match(threeSource, /CLOSEUP_CAMERA_DISTANCE = 10/); assert.match(threeSou
 assert.match(indexSource, /aria-label="Entity selection"/); assert.doesNotMatch(indexSource, /id="morphologyInspector"[^>]*open/);
 assert.match(collapsibleSource, /protouniverse\.sidebar\.collapsed\./);
 assert.match(indexSource, /id="inspectorCloseup"/); assert.match(indexSource, /aria-label="Entity selection"/);
-assert.match(threeSource, /PointsMaterial\(\{ size: \.138/);
+assert.match(threeSource, /ShaderMaterial/);assert.match(threeSource, /pointSize: \{ value: \.138 \}/);assert.doesNotMatch(threeSource,/new THREE\.Mesh\([^)]*particle/);
 assert.match(await readFile(new URL("../src/closeup/entityCloseupController.ts", import.meta.url), "utf8"), /panelAction\.addEventListener\("click", \(\) => void enter\(\)\)/);
 assert.match(rendererSource, /segmentVisible/); assert.match(rendererSource, /frameTimeMs/); assert.match(bridgeClientSource, /SNAPSHOT_INTERVAL_MS = 15_000/);
 for (const cleanup of ["cancelAnimationFrame", "observer.disconnect", "controls.dispose", "geometry.dispose", "material.dispose", "renderer.dispose", "forceContextLoss"])

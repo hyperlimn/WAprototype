@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import net from "node:net";
 import path from "node:path";
-import { SaveStateStore, type SaveStateSummary } from "../save-state/saveStateStore.js";
+import { SaveStateStore, validateSaveId, type SaveStateSummary } from "../save-state/saveStateStore.js";
 
 export const SUPERVISOR_HOST = "127.0.0.1";
 export const SUPERVISOR_PORT = 8790;
@@ -11,10 +11,10 @@ export const MANAGED_SERVICES = Object.freeze([
   { id: "bridge-api", label: "Bridge + Operator API", url: "http://127.0.0.1:8787", port: 8787, healthPath: "/api/health" },
 ] as const);
 export type ManagedServiceId = typeof MANAGED_SERVICES[number]["id"];
-export type SupervisorCommand = "service.bridge-api.restart" | "runtime.restart-all" | "runtime.resume-save";
+export type SupervisorCommand = "service.bridge-api.restart" | "runtime.restart-all" | "runtime.resume-save" | "universe.delete-save";
 export interface ServiceRun { id: string; commandId: SupervisorCommand; command: string; startedAt: string; finishedAt: string | null;
   status: "running" | "completed" | "failed"; output: string; pid: number | null; url: string; phase: string; reloadReady: boolean;
-  save?: { id: string; universe: string; tick: number; path: string; checksum: string } }
+  error?: string; save?: { id: string; universe: string; tick: number; path: string; checksum: string } }
 export interface SupervisorDependencies {
   spawn: typeof spawn; isPortOpen(port: number): Promise<boolean>;
   request(url: string, init?: RequestInit): Promise<{ ok: boolean; status: number; json(): Promise<any> }>;
@@ -48,6 +48,10 @@ export class ServiceSupervisor {
       startedAt: new Date().toISOString(), finishedAt: null, status: "running", output: "", pid: null, url: "", phase: "starting", reloadReady: false };
     this.runs.push(run); while (this.runs.length > 30) this.runs.shift(); this.append(run, `$ ${command}\n`); return run; }
   private append(run: ServiceRun, text: string): void { run.output = `${run.output}${new Date().toISOString()} ${text}`.slice(-180_000); }
+  private fail(run: ServiceRun, error: unknown): void {
+    run.status = "failed"; run.phase = "failed"; run.finishedAt = new Date().toISOString();
+    run.error = error instanceof Error ? error.message : String(error); this.append(run, `[failed] ${run.error}\n`);
+  }
   private serviceCommand(id: ManagedServiceId): { command: string; args: string[] } {
     if (id === "bridge-api") return { command: process.execPath, args: [path.join(this.root, "node_modules", "tsx", "dist", "cli.mjs"), path.join(this.root, "server", "index.ts")] };
     return { command: process.execPath, args: [path.join(this.root, "node_modules", "vite", "bin", "vite.js"), "--host", "127.0.0.1"] };
@@ -66,6 +70,7 @@ export class ServiceSupervisor {
   private async waitServiceHealthy(id: ManagedServiceId, attempts = 80): Promise<void> {
     const service = MANAGED_SERVICES.find((item) => item.id === id)!;
     for (let index = 0; index < attempts; index++) {
+      if (!this.isOwned(id)) throw new Error(`${service.label} exited before becoming application-ready`);
       try {
         if (await this.dependencies.isPortOpen(service.port)) {
           const response = await this.dependencies.request(`${service.url}${service.healthPath}`);
@@ -81,15 +86,21 @@ export class ServiceSupervisor {
     throw new Error(`${service.label} did not become application-ready`);
   }
   async startInitialStack(): Promise<ServiceRun> { const run = this.record("service.bridge-api.restart", "npm run dev");
-    for (const service of MANAGED_SERVICES) if (!this.isOwned(service.id) && await this.dependencies.isPortOpen(service.port)) throw new Error(`${service.label} port is occupied by an unmanaged process`);
-    this.spawnService("bridge-api", process.env, run); await this.waitServiceHealthy("bridge-api"); this.spawnService("frontend", process.env, run); await this.waitServiceHealthy("frontend");
-    run.status = "completed"; run.phase = "healthy"; run.finishedAt = new Date().toISOString(); this.append(run, "Runtime stack healthy\n"); return { ...run };
+    try {
+      for (const service of MANAGED_SERVICES) if (!this.isOwned(service.id) && await this.dependencies.isPortOpen(service.port)) throw new Error(`${service.label} port is occupied by an unmanaged process`);
+      if (!this.isOwned("bridge-api")) { this.spawnService("bridge-api", process.env, run); await this.waitServiceHealthy("bridge-api"); }
+      if (!this.isOwned("frontend")) { this.spawnService("frontend", process.env, run); await this.waitServiceHealthy("frontend"); }
+      run.status = "completed"; run.phase = "healthy"; run.finishedAt = new Date().toISOString(); this.append(run, "Runtime stack healthy\n"); return { ...run };
+    } catch (error) { this.fail(run, error); throw error; }
   }
   async startOrRestart(action: unknown): Promise<ServiceRun> { if (action !== "service.bridge-api.restart") throw new Error("Service action is not allowlisted");
-    const run = this.record(action, "npm run dev:bridge"); if (this.isOwned("bridge-api")) await this.stopService("bridge-api", run);
-    else if (await this.dependencies.isPortOpen(8787)) throw new Error("Bridge/API port 8787 is occupied by an unmanaged process; refusing to terminate or replace it");
-    const child = this.spawnService("bridge-api", process.env, run); run.pid = child.pid ?? null; run.url = "http://127.0.0.1:8787"; await this.waitServiceHealthy("bridge-api");
-    run.status = "completed"; run.phase = "healthy"; run.finishedAt = new Date().toISOString(); this.append(run, "Bridge + Operator API ready\n"); return { ...run };
+    const run = this.record(action, "npm run dev:bridge");
+    try {
+      if (this.isOwned("bridge-api")) await this.stopService("bridge-api", run);
+      else if (await this.dependencies.isPortOpen(8787)) throw new Error("Bridge/API port 8787 is occupied by an unmanaged process; refusing to terminate or replace it");
+      const child = this.spawnService("bridge-api", process.env, run); run.pid = child.pid ?? null; run.url = "http://127.0.0.1:8787"; await this.waitServiceHealthy("bridge-api");
+      run.status = "completed"; run.phase = "healthy"; run.finishedAt = new Date().toISOString(); this.append(run, "Bridge + Operator API ready\n"); return { ...run };
+    } catch (error) { this.fail(run, error); throw error; }
   }
   beginRestartAll(action: unknown): ServiceRun { if (action !== "runtime.restart-all") throw new Error("Runtime action is not allowlisted");
     if (this.restartActive) throw new Error("Restart Everything is already running"); const run = this.record(action, "Restart Everything (save → stop → resume)");
@@ -99,6 +110,20 @@ export class ServiceSupervisor {
     const status = await this.requestJson("http://127.0.0.1:8787/api/status");
     if (!status.connected || typeof status.seed !== "string") throw new Error("No authoritative universe is connected");
     return { universe: status.seed, saves: await this.saveStates.list(status.seed) };
+  }
+  async deleteSave(action: unknown, suppliedId: unknown): Promise<ServiceRun> {
+    if (action !== "universe.delete-save") throw new Error("Save deletion action is not allowlisted");
+    const saveId = validateSaveId(suppliedId), run = this.record(action, `Delete ${saveId}`);
+    try {
+      run.phase = "validating"; const status = await this.requestJson("http://127.0.0.1:8787/api/status");
+      if (!status.connected || typeof status.seed !== "string") throw new Error("No authoritative universe is connected");
+      if (status.runtime?.mode === "resumed" && status.runtime?.sourceSaveId === saveId)
+        throw new Error("Selected save is the active runtime continuation source and remains a live restart dependency");
+      this.append(run, `Validated ${saveId} for ${status.seed}\n`); run.phase = "deleting";
+      const deleted = await this.saveStates.delete(status.seed, saveId);
+      this.append(run, `Deleted ${deleted.id}\nSave library refreshed\n`); run.status = "completed"; run.phase = "complete"; run.finishedAt = new Date().toISOString();
+    } catch (error) { this.fail(run, error); }
+    return { ...run };
   }
   beginResumeSave(action: unknown, saveId: unknown): ServiceRun {
     if (action !== "runtime.resume-save") throw new Error("Runtime action is not allowlisted");
@@ -163,8 +188,7 @@ export class ServiceSupervisor {
         ? "Authoritative resumed browser runtime did not become healthy"
         : "Authoritative resumed browser runtime did not match the selected save");
     } catch (error) {
-      run.status = "failed"; run.phase = "failed"; run.finishedAt = new Date().toISOString();
-      this.append(run, `[failed] ${error instanceof Error ? error.message : error}\n`);
+      this.fail(run, error);
     }
   }
 }

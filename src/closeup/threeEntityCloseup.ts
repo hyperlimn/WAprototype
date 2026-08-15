@@ -5,7 +5,7 @@ import { oscillationAtTick } from "../simulation/oscillation.js";
 import { closeupOscillationVisual, deriveMorphologyGenome, morphologyRadius, sampleSurfacePattern } from "./entityMorphology.js";
 import type { MorphologyGenome } from "./entityMorphology.js";
 import { deriveSymmetryCameraBasis, type CloseupCameraPreset } from "./symmetryCamera.js";
-import { buildConnectionParticleData, type CloseupConnection, type ConnectionDimensionState } from "./connectionParticles.js";
+import { buildConnectionParticleData, updateConnectionParticlePositions, type CloseupConnection, type ConnectionDimensionState } from "./connectionParticles.js";
 
 export const CLOSEUP_WIDTH_SEGMENTS = 320;
 export const CLOSEUP_HEIGHT_SEGMENTS = 192;
@@ -45,7 +45,9 @@ export function mountThreeEntityCloseup(host: HTMLElement, entity: Entity, curre
   const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.dampingFactor = .07;
   controls.enablePan = false; controls.minDistance = 2; controls.maxDistance = 14; controls.rotateSpeed = .55; controls.zoomSpeed = .7;
   host.append(renderer.domElement); let frame = 0, disposed = false;
-  const resize = () => { const width = host.clientWidth, height = host.clientHeight; renderer.setSize(width, height, false); camera.aspect = width / Math.max(1, height); camera.updateProjectionMatrix(); };
+  const particleViewportScale = { value: 1 };
+  const resize = () => { const width = host.clientWidth, height = host.clientHeight; renderer.setSize(width, height, false); camera.aspect = width / Math.max(1, height); camera.updateProjectionMatrix();
+    particleViewportScale.value = height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))); };
   const observer = new ResizeObserver(resize); observer.observe(host); resize();
   const cameraBasis = deriveSymmetryCameraBasis(parameters);
   const setCameraPreset = (preset: CloseupCameraPreset): void => {
@@ -56,21 +58,27 @@ export function mountThreeEntityCloseup(host: HTMLElement, entity: Entity, curre
     camera.position.set(direction.x * CLOSEUP_CAMERA_DISTANCE, direction.y * CLOSEUP_CAMERA_DISTANCE, direction.z * CLOSEUP_CAMERA_DISTANCE); camera.up.set(up.x, up.y, up.z);
     controls.target.set(0, 0, 0); camera.lookAt(controls.target); controls.update();
   };
-  const particleMaterial = new THREE.PointsMaterial({ size: .138, vertexColors: true, transparent: true, opacity: .72, sizeAttenuation: true, depthWrite: false });
+  const particleMaterial = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    uniforms: { viewportScale: particleViewportScale, pointSize: { value: .138 } },
+    vertexShader: `attribute vec3 color; attribute float glowIntensity; attribute float glowScale; varying vec3 vColor; varying float vGlow;
+      uniform float viewportScale; uniform float pointSize; void main(){ vec4 mv=modelViewMatrix*vec4(position,1.0); gl_Position=projectionMatrix*mv;
+      gl_PointSize=pointSize*glowScale*viewportScale/max(0.1,-mv.z); vColor=color; vGlow=glowIntensity; }`,
+    fragmentShader: `varying vec3 vColor; varying float vGlow; void main(){ float d=length(gl_PointCoord-vec2(0.5))*2.0; if(d>1.0)discard;
+      float core=smoothstep(0.36,0.0,d); float halo=smoothstep(1.0,0.16,d)*0.48; gl_FragColor=vec4(vColor*(0.72+vGlow*0.7),clamp((core+halo)*vGlow,0.0,1.0)); }` });
   let particleGeometry = new THREE.BufferGeometry(), particlePoints = new THREE.Points(particleGeometry, particleMaterial), particleData = buildConnectionParticleData([]);
   scene.add(particlePoints); let lastConnectionCheck = -Infinity, connectionSignature = "";
   const particleColor = (state: ConnectionDimensionState): THREE.Color => new THREE.Color(state === "dual" ? 0xb9c989 : state === "spatial" ? 0x7eb9b6 : state === "influence" ? 0x879ab9 : 0x52605f);
   const refreshParticles = () => { const now = performance.now(); if (now - lastConnectionCheck < 500) return; lastConnectionCheck = now; const connections = currentConnections();
-    const signature = connections.map((item) => `${item.id}:${item.state}`).sort().join("|"); if (signature === connectionSignature) return; connectionSignature = signature;
+    const signature = connections.map((item) => `${item.id}:${item.state}:${item.distance}:${item.relationshipStrength}:${item.coherence}:${item.synergy}:${item.connectedDirection}`).sort().join("|"); if (signature === connectionSignature) return; connectionSignature = signature;
     particleData = buildConnectionParticleData(connections); const colors = new Float32Array(particleData.states.length * 3);
     particleData.states.forEach((state, index) => { const color = particleColor(state); colors[index * 3] = color.r; colors[index * 3 + 1] = color.g; colors[index * 3 + 2] = color.b; });
     const old = particleGeometry; particleGeometry = new THREE.BufferGeometry(); particleGeometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(particleData.positions), 3));
-    particleGeometry.setAttribute("color", new THREE.BufferAttribute(colors, 3)); particlePoints.geometry = particleGeometry; old.dispose(); };
+    particleGeometry.setAttribute("color", new THREE.BufferAttribute(colors, 3)); particleGeometry.setAttribute("glowIntensity", new THREE.BufferAttribute(particleData.glowIntensities, 1));
+    particleGeometry.setAttribute("glowScale", new THREE.BufferAttribute(particleData.glowScales, 1)); particlePoints.geometry = particleGeometry; old.dispose(); };
   const draw = () => { if (disposed) return; const tick = currentTick(); refreshParticles(); const visual = closeupOscillationVisual(oscillationAtTick(entity, tick)); mesh.scale.setScalar(visual.radialScale);
     material.emissiveIntensity = parameters.emissiveIntensity * visual.emissiveScale; patternEmission.value = parameters.emissivePatternStrength * visual.emissiveScale;
     const particlePositions = particleGeometry.getAttribute("position") as THREE.BufferAttribute | undefined;
-    if (particlePositions) { const time = tick / 1000; for (let index = 0; index < particleData.ids.length; index++) { const y = particleData.positions[index * 3 + 1], radial = Math.sqrt(Math.max(0, particleData.radii[index] ** 2 - y ** 2));
-        const phi = particleData.phases[index] + time * particleData.speeds[index]; particlePositions.setXYZ(index, Math.cos(phi) * radial, y + Math.sin(phi * .7) * .04, Math.sin(phi) * radial); } particlePositions.needsUpdate = true; }
+    if (particlePositions) { updateConnectionParticlePositions(particleData, tick, particlePositions.array as Float32Array); particlePositions.needsUpdate = true; }
     controls.update(); renderer.render(scene, camera); frame = requestAnimationFrame(draw); }; draw();
   return { genome: parameters, setCameraPreset, dispose: () => { if (disposed) return; disposed = true; cancelAnimationFrame(frame); observer.disconnect(); controls.dispose(); geometry.dispose(); material.dispose(); particleGeometry.dispose(); particleMaterial.dispose();
     renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove(); } };

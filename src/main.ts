@@ -2,7 +2,7 @@ import "./style.css";
 import { Camera } from "./rendering/camera";
 import { Renderer } from "./rendering/renderer";
 import { SIMULATION_VERSION, Universe } from "./simulation/universe";
-import type { SaveStateArtifact } from "./simulation/saveState";
+import { validateContinuation, type SaveStateArtifact } from "./simulation/saveState";
 import { bindControls } from "./ui/controls";
 import { updateInspector, updateRelationshipInspector } from "./ui/inspector";
 import { updateInstruments } from "./ui/instruments";
@@ -51,7 +51,7 @@ async function loadRuntime(): Promise<Universe> {
       if (!response.ok) throw new Error((await response.json() as { message?: string }).message ?? "Resume bootstrap failed");
       const value = await response.json() as { mode: "fresh" | "resumed"; artifact?: SaveStateArtifact };
       if (value.mode === "resumed" && value.artifact) {
-        const artifact = value.artifact, continuation = structuredClone(artifact.continuation);
+        const artifact = value.artifact, continuation = validateContinuation(structuredClone(artifact.continuation), artifact.simulationVersion);
         continuation.runtime = { mode: "resumed", sourceSaveId: artifact.id, sourceSaveHash: artifact.checksum.value, sourceSaveTick: artifact.tick };
         return new Universe(artifact.universe, continuation);
       }

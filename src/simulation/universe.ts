@@ -12,7 +12,7 @@ import { RelationshipField } from "./relationshipField";
 import { MAX_BASE_POPULATION, ReproductionSystem } from "./reproduction";
 import { OccurrenceLog } from "./occurrenceLog";
 import { RuptureSystem } from "./rupture";
-import { SAVE_STATE_SCHEMA_VERSION, validateContinuation, type RuntimeProvenance, type UniverseContinuationState } from "./saveState";
+import { SAVE_STATE_SCHEMA_VERSION, validateContinuation, type LegacyUniverseContinuationState, type RuntimeProvenance, type UniverseContinuationState } from "./saveState";
 import { orderedBonds, orderedRelationships } from "./deterministicOrdering";
 import { SimulationProfiler } from "./simulationProfiler";
 import { RelationshipTickWorkspace } from "./relationshipTickWorkspace";
@@ -82,7 +82,7 @@ export class Universe {
     simulationTime: 0,
   };
 
-  constructor(readonly seed: string, saved?: UniverseContinuationState, options: { lawEpochInterval?: number } = {}) {
+  constructor(readonly seed: string, saved?: UniverseContinuationState | LegacyUniverseContinuationState, options: { lawEpochInterval?: number } = {}) {
     this.random = new SeededRandom(`${SIMULATION_VERSION}:${seed}`);
     if (saved) {
       const value = validateContinuation(saved, SIMULATION_VERSION); if (value.universe !== seed) throw new Error("Save universe identity does not match requested universe");

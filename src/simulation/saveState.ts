@@ -29,16 +29,17 @@ export interface UniverseContinuationState {
 
 export type LegacyUniverseContinuationState = Omit<UniverseContinuationState, "schemaVersion" | "lawEvolution"> & { schemaVersion: typeof LEGACY_SAVE_STATE_SCHEMA_VERSION };
 
-export interface SaveStateArtifact {
-  schemaVersion: typeof SAVE_STATE_SCHEMA_VERSION | typeof LEGACY_SAVE_STATE_SCHEMA_VERSION;
+interface SaveStateArtifactBase {
   id: string;
   universe: string;
   tick: number;
   createdAt: string;
   simulationVersion: string;
   checksum: { algorithm: "sha256"; value: string };
-  continuation: UniverseContinuationState;
 }
+export type SaveStateArtifact =
+  | (SaveStateArtifactBase & { schemaVersion: typeof SAVE_STATE_SCHEMA_VERSION; continuation: UniverseContinuationState })
+  | (SaveStateArtifactBase & { schemaVersion: typeof LEGACY_SAVE_STATE_SCHEMA_VERSION; continuation: LegacyUniverseContinuationState });
 
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 export function migrateLegacyContinuation(value: LegacyUniverseContinuationState): UniverseContinuationState {

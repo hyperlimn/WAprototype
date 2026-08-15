@@ -1,11 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
-import { link, mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, readFile, readdir, realpath, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { LEGACY_SAVE_STATE_SCHEMA_VERSION, SAVE_STATE_SCHEMA_VERSION, validateContinuation, type SaveStateArtifact, type UniverseContinuationState } from "../../src/simulation/saveState.js";
 
 const safe = (value: string): string => { if (!/^[a-zA-Z0-9._-]{1,120}$/.test(value)) throw new Error("Invalid save-state identifier"); return value; };
+export const validateSaveId = (value: unknown): string => { if (typeof value !== "string" || !/^save-[a-zA-Z0-9._-]{1,100}$/.test(value)
+  || value.includes("..") || value.includes("/") || value.includes("\\")) throw new Error("Invalid save-state ID"); return value; };
 const canonical = (value: unknown): string => JSON.stringify(value);
-export const continuationHash = (value: UniverseContinuationState): string => createHash("sha256").update(canonical(value)).digest("hex");
+export const continuationHash = (value: unknown): string => createHash("sha256").update(canonical(value)).digest("hex");
 export interface SaveStateSummary { id: string; universe: string; tick: number | null; createdAt: string | null; checksum: string | null;
   simulationVersion: string | null; resumable: boolean; compatibility: "compatible" | "invalid"; reason: string | null }
 
@@ -14,7 +16,7 @@ export class SaveStateStore {
   file(universe: string, id: string): string { return path.join(this.root, safe(universe), "save-states", `${safe(id)}.json`); }
   async create(value: UniverseContinuationState): Promise<{ artifact: SaveStateArtifact; file: string }> {
     const continuation = validateContinuation(value), id = `save-${String(continuation.tick).padStart(12, "0")}`;
-    const file = this.file(continuation.universe, id), artifact: SaveStateArtifact = { schemaVersion: SAVE_STATE_SCHEMA_VERSION, id,
+    const file = this.file(continuation.universe, id), artifact: Extract<SaveStateArtifact, { schemaVersion: typeof SAVE_STATE_SCHEMA_VERSION }> = { schemaVersion: SAVE_STATE_SCHEMA_VERSION, id,
       universe: continuation.universe, tick: continuation.tick, createdAt: new Date().toISOString(), simulationVersion: continuation.simulationVersion,
       checksum: { algorithm: "sha256", value: continuationHash(continuation) }, continuation };
     await mkdir(path.dirname(file), { recursive: true }); const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
@@ -27,11 +29,15 @@ export class SaveStateStore {
     const file = fileOrId.endsWith(".json") || fileOrId.includes("/") || fileOrId.includes("\\") ? path.resolve(fileOrId)
       : universe ? this.file(universe, fileOrId) : (() => { throw new Error("A universe is required when loading by save ID"); })();
     const artifact = JSON.parse(await readFile(file, "utf8")) as SaveStateArtifact;
-    if (![SAVE_STATE_SCHEMA_VERSION, LEGACY_SAVE_STATE_SCHEMA_VERSION].includes(artifact.schemaVersion as any) || artifact.id === undefined || artifact.universe === undefined || artifact.tick !== artifact.continuation?.tick)
+    if (![SAVE_STATE_SCHEMA_VERSION, LEGACY_SAVE_STATE_SCHEMA_VERSION].includes(artifact.schemaVersion as any) || artifact.id === undefined || artifact.universe === undefined
+      || artifact.tick !== artifact.continuation?.tick || artifact.universe !== artifact.continuation?.universe
+      || artifact.schemaVersion !== artifact.continuation?.schemaVersion || artifact.checksum?.algorithm !== "sha256")
       throw new Error("Malformed or incompatible save-state artifact");
     if (continuationHash(artifact.continuation) !== artifact.checksum?.value) throw new Error("Save-state checksum mismatch");
-    const continuation = validateContinuation(artifact.continuation, artifact.simulationVersion);
-    return { ...artifact, continuation };
+    // Validate (and, for legacy v1, prove migration is allowed) without creating a
+    // hybrid artifact whose envelope/checksum describe v1 but payload describes v2.
+    validateContinuation(artifact.continuation, artifact.simulationVersion);
+    return artifact;
   }
   async list(universe: string): Promise<SaveStateSummary[]> {
     const directory = path.join(this.root, safe(universe), "save-states");
@@ -45,5 +51,20 @@ export class SaveStateStore {
           resumable: false, compatibility: "invalid" as const, reason: error instanceof Error ? error.message : "Invalid save-state" }; }
     }));
     return summaries.sort((a, b) => (b.tick ?? -1) - (a.tick ?? -1) || b.id.localeCompare(a.id));
+  }
+  async delete(universe: string, suppliedId: unknown): Promise<SaveStateSummary> {
+    const selectedUniverse = safe(universe), id = validateSaveId(suppliedId), file = this.file(selectedUniverse, id);
+    const directory = path.dirname(file), [rootReal, directoryReal, fileReal, metadata] = await Promise.all([
+      realpath(this.root), realpath(directory), realpath(file), lstat(file),
+    ]);
+    const relativeDirectory = path.relative(rootReal, directoryReal);
+    if (relativeDirectory.startsWith("..") || path.isAbsolute(relativeDirectory) || path.dirname(fileReal) !== directoryReal
+      || metadata.isSymbolicLink() || !metadata.isFile()) throw new Error("Save deletion target is outside the canonical save-state directory");
+    const artifact = await this.load(id, selectedUniverse);
+    if (artifact.id !== id || artifact.universe !== selectedUniverse) throw new Error("Save artifact identity does not match the selected canonical save");
+    const summary: SaveStateSummary = { id, universe: selectedUniverse, tick: artifact.tick, createdAt: artifact.createdAt,
+      checksum: artifact.checksum.value, simulationVersion: artifact.simulationVersion, resumable: true, compatibility: "compatible", reason: null };
+    await unlink(file);
+    return summary;
   }
 }

@@ -98,8 +98,10 @@
             <h3>Universe</h3>
             <button type="button" data-operator-command="universe.save">Save current universe state</button>
             <dl class="operator-runtime"><div><dt>Runtime</dt><dd id="operatorRuntime">unavailable</dd></div><div><dt>Save path</dt><dd id="operatorSavePattern">—</dd></div></dl>
-            <div class="save-state-library"><h4>Save States</h4><select id="operatorSaveStates" size="4" aria-label="Saved universe states"></select>
-              <p id="operatorSaveStatus" class="operator-note">Loading save states…</p><button id="operatorResumeSave" type="button" disabled>Resume Selected Save</button></div>
+            <div class="save-state-library"><h4>Save States</h4><div class="save-state-scroll"><select id="operatorSaveStates" size="4" aria-label="Saved universe states"></select></div>
+              <p id="operatorSaveStatus" class="operator-note">Loading save states…</p><pre id="operatorSaveDetails" class="save-state-details" tabindex="0" aria-label="Selected save details">No save selected.</pre>
+              <div class="operator-actions"><button id="operatorCopySave" type="button" disabled>Copy Save Info</button><button id="operatorResumeSave" type="button" disabled>Resume Selected Save</button>
+                <button id="operatorDeleteSave" type="button" disabled>Delete Selected Save State</button></div></div>
           </div>
           <div class="operator-group">
             <h3>Observation</h3>

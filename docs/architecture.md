@@ -68,7 +68,7 @@ Save compatibility rule: do not change the continuation schema, state meaning, P
 
 ### Entity close-up morphology
 
-`src/closeup/` maps immutable fingerprints to a deterministic morphology genome, bounded topology and pattern features, then a lazily created Three.js close-up. Oscillation adds tick-derived visual breathing only. Camera, animation, particles, and WebGL lifecycle are presentation concerns and must remain disposable and non-authoritative.
+`src/closeup/` maps immutable fingerprints to a deterministic morphology genome, bounded topology and pattern features, then a lazily created Three.js close-up. Oscillation adds tick-derived visual breathing only. Connection particles are one buffered point per current relationship; their deterministic planes, shells, speed, state color, and glow are observer projections of current relationship measurements. Camera, animation, particles, and WebGL lifecycle are presentation concerns and must remain disposable and non-authoritative.
 
 ### Bridge, operator tools, and supervisor
 

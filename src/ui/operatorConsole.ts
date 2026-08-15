@@ -1,4 +1,5 @@
 import { commandById, formatCommand, formatRegistryHelp, type ProtoUniverseCommand } from "../operator/commandRegistry";
+import { requestOperatorJson } from "./operatorApi";
 
 interface ExperimentStatus { id: string; frozen: boolean; compared: boolean; blindAvailable: boolean; revealAvailable: boolean; revealUnavailableReason: string | null }
 interface OperatorRun { id: string; commandId: string; command: string; startedAt: string; finishedAt: string | null; status: string; output: string; stoppable: boolean }
@@ -17,23 +18,27 @@ export function bindOperatorConsole(root: HTMLElement): void {
   const serviceControl = document.querySelector<HTMLButtonElement>("#bridgeApiControl")!, supervisorStatus = document.querySelector<HTMLElement>("#supervisorStatus")!;
   const restartEverything = document.querySelector<HTMLButtonElement>("#restartEverything")!;
   const saveSelect = root.querySelector<HTMLSelectElement>("#operatorSaveStates")!, resumeSave = root.querySelector<HTMLButtonElement>("#operatorResumeSave")!;
-  const saveStatus = root.querySelector<HTMLElement>("#operatorSaveStatus")!;
+  const deleteSave = root.querySelector<HTMLButtonElement>("#operatorDeleteSave")!, copySave = root.querySelector<HTMLButtonElement>("#operatorCopySave")!;
+  const saveStatus = root.querySelector<HTMLElement>("#operatorSaveStatus")!, saveDetails = root.querySelector<HTMLElement>("#operatorSaveDetails")!;
   const toast = document.querySelector<HTMLElement>("#operatorToast")!;
   let catalog: Catalog | null = null, activeRun: OperatorRun | null = null, clearedAt = Number(sessionStorage.getItem("protouniverse.operator.clearedAt") ?? 0);
   let operatorRuns: OperatorRun[] = [], serviceRuns: OperatorRun[] = [], toastTimer = 0;
   let saveRefreshAt = 0;
   const announced = new Map<string, string>();
   const show = (text: string) => { output.textContent = text || "No operator output in this browser session."; output.scrollTop = output.scrollHeight; };
-  const request = async (pathname: string, init?: RequestInit) => { const response = await fetch(`${API}${pathname}`, init); const value = await response.json();
-    if (!response.ok) throw new Error(value.message ?? value.error); return value; };
-  const supervisorRequest = async (pathname: string, init?: RequestInit) => { const response = await fetch(`${SUPERVISOR_API}${pathname}`, init); const value = await response.json();
-    if (!response.ok) throw new Error(value.message ?? value.error); return value; };
+  const request = (pathname: string, init?: RequestInit) => requestOperatorJson(API, pathname, "bridge", init);
+  const supervisorRequest = (pathname: string, init?: RequestInit) => requestOperatorJson(SUPERVISOR_API, pathname, "supervisor", init);
   const notify = (message: string, failed = false) => { window.clearTimeout(toastTimer); toast.textContent = message; toast.hidden = false; toast.classList.toggle("is-failed", failed);
     toastTimer = window.setTimeout(() => { toast.hidden = true; }, 3_500); };
   const renderRuns = () => { const visible = [...operatorRuns, ...serviceRuns].filter((run) => Date.parse(run.startedAt) >= clearedAt)
       .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt)); show(visible.map((run) => run.output).join("\n") || output.textContent || ""); };
   const observeCompletions = (runs: OperatorRun[]) => { for (const run of runs) { const previous = announced.get(run.id); announced.set(run.id, run.status);
-      if (previous === "running" && run.status !== "running") notify(`${run.commandId}: ${run.status}`, run.status !== "completed"); } };
+      if (previous === "running" && run.status !== "running") {
+        notify(`${run.commandId}: ${run.status}`, run.status !== "completed");
+        if (run.commandId === "universe.save" && run.status === "completed") void loadSaves().catch((error) => {
+          saveStatus.textContent = `Save succeeded, but library refresh failed: ${error instanceof Error ? error.message : error}`;
+        });
+      } } };
   const refreshExperiment = () => {
     const selected = catalog?.experiments.find((item) => item.id === experimentSelect.value); if (!selected) return;
     blind.disabled = !selected.blindAvailable; reveal.disabled = !selected.revealAvailable;
@@ -47,9 +52,12 @@ export function bindOperatorConsole(root: HTMLElement): void {
       option.disabled = !save.resumable; option.dataset.summary = JSON.stringify(save); return option;
     }));
     if ([...saveSelect.options].some((option) => option.value === prior && !option.disabled)) saveSelect.value = prior;
+    else { const next = [...saveSelect.options].find(option => !option.disabled); if (next) saveSelect.value = next.value; }
     const selected = saves.find((save) => save.id === saveSelect.value); resumeSave.disabled = !selected?.resumable;
+    deleteSave.disabled = !selected?.resumable; copySave.disabled = !selected;
     saveStatus.textContent = selected ? `${selected.universe} · ${selected.compatibility} · ${selected.createdAt ? new Date(selected.createdAt).toLocaleString() : selected.reason ?? "unavailable"}`
       : saves.length ? "Select a compatible save." : "No immutable saves found for this universe.";
+    saveDetails.textContent = selected ? `${selected.id}\ntick ${selected.tick?.toLocaleString() ?? "unavailable"}\n${selected.universe}\ncreated ${selected.createdAt ? new Date(selected.createdAt).toLocaleString() : "unavailable"}\nSHA-256 ${selected.checksum ?? "unavailable"}\n${selected.compatibility}` : "No save selected.";
   };
   const loadSaves = async () => { const value = await supervisorRequest("/save-states") as { saves: SaveSummary[] }; refreshSaveSelection(value.saves); };
   const loadCatalog = async () => {
@@ -88,10 +96,21 @@ export function bindOperatorConsole(root: HTMLElement): void {
       serviceRuns = [value.run as OperatorRun, ...serviceRuns]; renderRuns(); }
     catch (error) { const message = error instanceof Error ? error.message : String(error); show(`${output.textContent}\n${new Date().toISOString()} [failed] ${message}`); notify("Restart Everything failed", true); }
   });
-  saveSelect.addEventListener("change", () => { const option = saveSelect.selectedOptions[0]; const save = option?.dataset.summary ? JSON.parse(option.dataset.summary) as SaveSummary : null;
-    resumeSave.disabled = !save?.resumable; saveStatus.textContent = save ? `${save.universe} · ${save.compatibility} · ${save.createdAt ? new Date(save.createdAt).toLocaleString() : save.reason ?? "unavailable"}` : "Select a compatible save."; });
+  const selectedSave = (): SaveSummary | null => { const option = saveSelect.selectedOptions[0]; return option?.dataset.summary ? JSON.parse(option.dataset.summary) as SaveSummary : null; };
+  saveSelect.addEventListener("change", () => { const save = selectedSave(); resumeSave.disabled = !save?.resumable; deleteSave.disabled = !save?.resumable; copySave.disabled = !save;
+    saveStatus.textContent = save ? `${save.universe} · ${save.compatibility} · ${save.createdAt ? new Date(save.createdAt).toLocaleString() : save.reason ?? "unavailable"}` : "Select a compatible save.";
+    saveDetails.textContent = save ? `${save.id}\ntick ${save.tick?.toLocaleString() ?? "unavailable"}\n${save.universe}\ncreated ${save.createdAt ? new Date(save.createdAt).toLocaleString() : "unavailable"}\nSHA-256 ${save.checksum ?? "unavailable"}\n${save.compatibility}` : "No save selected."; });
+  copySave.addEventListener("click", () => void navigator.clipboard.writeText(saveDetails.textContent ?? ""));
+  deleteSave.addEventListener("click", async () => { const save = selectedSave(); if (!save?.resumable || save.tick === null) return;
+    if (!confirm(`Delete ${save.id}?\n\nTick: ${save.tick.toLocaleString()}\nUniverse: ${save.universe}\nCreated: ${save.createdAt ? new Date(save.createdAt).toLocaleString() : "unknown"}\n\nThis permanently deletes only this immutable save state.`)) return;
+    const definition = commandById("universe.delete-save")!, command = formatCommand(definition, { saveId: save.id });
+    show(`${output.textContent}\n${new Date().toISOString()} $ ${command}\n${new Date().toISOString()} [starting] selected save deletion\n`);
+    try { const value = await supervisorRequest("/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ commandId: definition.id, saveId: save.id }) });
+      serviceRuns = [value.run as OperatorRun, ...serviceRuns]; renderRuns(); await loadSaves(); notify(`${save.id} deleted`); }
+    catch (error) { const message = error instanceof Error ? error.message : String(error); show(`${output.textContent}\n${new Date().toISOString()} [failed] ${message}`); notify("Delete Selected Save failed", true); }
+  });
   resumeSave.addEventListener("click", async () => {
-    const option = saveSelect.selectedOptions[0], save = option?.dataset.summary ? JSON.parse(option.dataset.summary) as SaveSummary : null;
+    const save = selectedSave();
     if (!save?.resumable || save.tick === null || !confirm(`Resume ${save.id}?\n\nThe currently running universe will be replaced by the immutable continuation from tick ${save.tick.toLocaleString()}. No new save will be created.`)) return;
     show(`${output.textContent}\n${new Date().toISOString()} $ Resume ${save.id}\n${new Date().toISOString()} [starting] selected save resume\n`);
     try { const value = await supervisorRequest("/run", { method: "POST", headers: { "Content-Type": "application/json" },

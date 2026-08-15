@@ -6,6 +6,9 @@ export interface ProtoUniverseCommand { id: string; label: string; group: Operat
 export const COMMAND_REGISTRY: readonly ProtoUniverseCommand[] = [
   { id: "universe.save", label: "Save current universe", group: "Universe", purpose: "Write an immutable executable continuation point for the active universe.",
     cli: "npm run universe:save", options: [], examples: ["npm run universe:save"], safety: "Current authoritative state only; never overwrites or restarts.", gui: true, longRunning: false },
+  { id: "universe.delete-save", label: "Delete selected save", group: "Universe", purpose: "Delete exactly one selected immutable save artifact by canonical ID.",
+    cli: "Delete <saveId>", options: [{ name: "saveId", type: "string", required: true, description: "Canonical immutable save ID" }], examples: ["Delete save-000000201118"],
+    safety: "Irreversible and confirmation-gated; the supervisor resolves the ID and refuses the active resume source.", gui: true, longRunning: false },
   { id: "observer.once", label: "Run observer once", group: "Observation", purpose: "Launch one autonomous observer expedition and exit.",
     cli: "npm run observer:once", options: [{ name: "observer", type: "string", default: "codex-first-entry", description: "Observer identity" },
       { name: "expeditionTimeout", type: "number", default: 3600, description: "Maximum expedition seconds" }],
@@ -36,6 +39,7 @@ export const COMMAND_REGISTRY: readonly ProtoUniverseCommand[] = [
 export function commandById(id: string): ProtoUniverseCommand | undefined { return COMMAND_REGISTRY.find((command) => command.id === id); }
 export function formatCommand(command: ProtoUniverseCommand, args: Record<string, unknown> = {}): string {
   if (command.id === "lab.blind" || command.id === "lab.reveal") return command.cli.replace("<id>", String(args.experiment ?? "<id>"));
+  if (command.id === "universe.delete-save") return command.cli.replace("<saveId>", String(args.saveId ?? "<saveId>"));
   const suffix = command.options.flatMap((option) => args[option.name] === undefined ? [] : [`--${option.name === "expeditionTimeout" ? "expedition-timeout" : option.name}`, String(args[option.name])]);
   return suffix.length ? `${command.cli} -- ${suffix.join(" ")}` : command.cli;
 }

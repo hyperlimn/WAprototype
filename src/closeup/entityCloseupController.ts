@@ -68,8 +68,13 @@ export function bindEntityCloseup(elements: Elements, camera: Camera, renderer: 
       const handle = mountThreeEntityCloseup(elements.viewport, entity, () => getUniverse().state.ticks, () => {
         const connections = []; for (const relationship of getUniverse().relationshipLayer.entities.values()) {
           if (relationship.parentAId !== entity.creationIndex && relationship.parentBId !== entity.creationIndex) continue;
-          connections.push({ id: relationship.id, state: relationship.spatialActive && relationship.influenceActive ? "dual" as const
-            : relationship.spatialActive ? "spatial" as const : relationship.influenceActive ? "influence" as const : "dormant" as const });
+          const otherId = relationship.parentAId === entity.creationIndex ? relationship.parentBId : relationship.parentAId;
+          const other = getUniverse().entities[otherId];
+          connections.push({ id: relationship.id, fingerprint: relationship.fingerprint,
+            state: relationship.spatialActive && relationship.influenceActive ? "dual" as const
+              : relationship.spatialActive ? "spatial" as const : relationship.influenceActive ? "influence" as const : "dormant" as const,
+            distance: relationship.distance, relationshipStrength: relationship.relationshipStrength, coherence: relationship.coherence,
+            synergy: relationship.synergy, connectedDirection: Math.atan2(other.y - entity.y, other.x - entity.x) });
         } return connections;
       });
       activeHandle = handle; disposeMounted = () => handle.dispose();

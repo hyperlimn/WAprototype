@@ -189,6 +189,8 @@ The genome uses independent two-character (8-bit) fingerprint slices, all zero-b
 
 Close-Up camera presets expose that pattern language without changing geometry. **Free** retains ordinary orbit/dolly controls. Morphology is canonically parameterized around the observer-space `+Y` axis, so **Pole** looks directly along `+Y` with `+Z` as camera-up. **Equator** looks along the perpendicular direction `(cos angularOffset, 0, sin angularOffset)` with `+Y` as camera-up. The compact collapsible Morphology instrument reads the already-derived genome and connects scaffold, symmetry orders, motifs, topology amplitudes, palette, emission, and material response to the visible orb.
 
+Each current relationship is also represented by exactly one buffered glowing particle. Current relationship distance maps to a bounded orbital shell; strength, coherence, synergy, and dimensional activity map to angular speed and glow; the current connected-entity direction plus a fingerprint-derived tilt defines the orbital plane; fingerprint segments define phase and rotation direction. These orbits visualize relationship character and are not authoritative relationship motion or physics.
+
 ## Machine interface
 
 The simulation is authoritative. Interfaces observe it.
@@ -312,7 +314,7 @@ This is deliberately not `human_current_view`: it does not capture the user's br
 
 ### Save-State / Resume
 
-Checkpoints are observational fossils; `protouniverse-save-state/1` artifacts are executable continuation points. While an authoritative browser runtime is connected, save its exact current state with:
+Checkpoints are observational fossils; `protouniverse-save-state/2` artifacts are executable continuation points. Pre-epoch version-1 artifacts remain explicitly migratable as documented above. While an authoritative browser runtime is connected, save its exact current state with:
 
 ```powershell
 npm run universe:save
@@ -337,6 +339,8 @@ The loopback bridge accepts only registry command IDs and validated typed argume
 Bridge and Operator API are one process on `127.0.0.1:8787`. `npm run dev` starts a separate loopback-only supervisor on `127.0.0.1:8790`; the supervisor owns and starts both frontend/Vite and the combined Bridge + Operator API service. The sidebar exposes a normal **Restart Everything** operation plus a combined Bridge/API diagnostic control. Restart Everything first creates an immutable save, asks Bridge/API to stop only GUI-owned operator children, stops only supervisor-owned service PIDs, resumes Bridge/API from that exact save, restarts the frontend, and verifies both services and resumed runtime provenance. The supervisor stays alive, retains the operation log while the browser is disconnected, and signals the browser to reload once the frontend is healthy. A failed save aborts shutdown. MCP servers spawned independently by Codex are not persistent managed runtime services and remain outside this registry. Existing direct `npm run dev:bridge` remains available, but an instance started that way is intentionally unmanaged.
 
 The Save States instrument lists checksum-validated immutable saves for the connected universe, newest tick first. **Resume Selected Save** submits only a canonical save ID; the supervisor resolves and validates it inside the configured save store before replacing any owned service. Invalid or incompatible artifacts remain visible as unavailable. Unlike Restart Everything, deliberate selected-save resume does not create a new save first.
+
+Selected save metadata is available as horizontally scrollable, selectable text with a copy action. **Delete Selected Save State** requires confirmation and submits only the selected save ID. The supervisor refuses path input, directories, files outside the canonical store, and deletion of the save that remains the active resumed runtime's restart dependency.
 
 All GUI actions write their exact CLI equivalent, timestamps, stdout/stderr, and final status into the built-in operator terminal. Save output includes authoritative tick, immutable path, and SHA-256 from the existing save command. Short completion/failure notices are supplementary; the terminal is the canonical log.
 

@@ -18,9 +18,10 @@ import { ObserverMemoryValidationError } from "./observer-memory/observerMemoryV
 import { randomUUID } from "node:crypto";
 import type { Duplex } from "node:stream";
 import { SaveStateStore } from "./save-state/saveStateStore.js";
-import type { UniverseContinuationState } from "../src/simulation/saveState.js";
+import { SAVE_STATE_SCHEMA_VERSION, type UniverseContinuationState } from "../src/simulation/saveState.js";
 import { OperatorRoutes } from "./operator/operatorRoutes.js";
 import { corsHeaders } from "./cors.js";
+import { assertCompatibleSaveProtocol } from "./save-state/saveProtocol.js";
 
 const HOST = process.env.PROTOUNIVERSE_BRIDGE_HOST ?? "127.0.0.1";
 const PORT = Number(process.env.PROTOUNIVERSE_BRIDGE_PORT ?? 8787);
@@ -59,6 +60,8 @@ const handleRequest = async (request: IncomingMessage, response: ServerResponse)
   if (request.method === "POST" && url.pathname === "/api/perception/mark-observed") return handleMarkObserved(request, response, perception, json);
   if (request.method === "POST" && url.pathname === "/api/save-state") {
     if (!browserConnected || !browserSocket) return json(response, 409, { error: "authoritative_runtime_unavailable" });
+    try { assertCompatibleSaveProtocol(store.heartbeat); }
+    catch (error) { return json(response, 409, { error: "save_schema_mismatch", message: error instanceof Error ? error.message : "Save protocol mismatch" }); }
     const requestId = randomUUID();
     try {
       const continuation = await new Promise<UniverseContinuationState>((resolve, reject) => {
@@ -106,6 +109,8 @@ const handleRequest = async (request: IncomingMessage, response: ServerResponse)
     return json(response, 200, { connected: browserConnected, simulationVersion: heartbeat?.simulationVersion ?? null,
       seed: heartbeat?.seed ?? null, currentTick: heartbeat?.currentTick ?? null, entityCount: heartbeat?.entityCount ?? null,
       runtime: heartbeat?.runtime ?? null,
+      saveStateSchemaVersion: heartbeat?.saveStateSchemaVersion ?? null,
+      expectedSaveStateSchemaVersion: SAVE_STATE_SCHEMA_VERSION,
       lastBrowserUpdateMsAgo: store.lastBrowserUpdateAt === null ? null : Date.now() - store.lastBrowserUpdateAt,
       lastSnapshotDurationMs: store.lastSnapshotDurationMs,
       observationMetrics: store.lastObservationMetrics,
@@ -113,7 +118,8 @@ const handleRequest = async (request: IncomingMessage, response: ServerResponse)
   }
   if (url.pathname === "/api/health") return json(response, 200, {
     service: "bridge-api", ready: true, authoritativeBrowserConnected: browserConnected,
-    snapshotAvailable: store.snapshot !== null,
+    snapshotAvailable: store.snapshot !== null, expectedSaveStateSchemaVersion: SAVE_STATE_SCHEMA_VERSION,
+    browserSaveStateSchemaVersion: store.heartbeat?.saveStateSchemaVersion ?? null,
   });
   if (url.pathname === "/api/runtime/bootstrap") {
     const selected = process.env.PROTOUNIVERSE_RESUME_SAVE;
