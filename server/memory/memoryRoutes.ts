@@ -39,7 +39,8 @@ export async function handleMemoryRoute(url: URL, response: ServerResponse, memo
   if (!historicalRoute) return false;
   const catalog = await listUniverses(memory.root);
   const archive = resolveUniverse(catalog, optionalString(url, "seed"), memory.activeSeed);
-  if (url.pathname === "/api/memory/status") { json(response, 200, archiveStatus(archive, recentCacheCount, memory.activeSeed)); return true; }
+  if (url.pathname === "/api/memory/status") { const archived = archiveStatus(archive, recentCacheCount, memory.activeSeed);
+    json(response, 200, { ...archived, ...(archive.manifest.seed === memory.activeSeed ? { manifestPersistence: memory.persistenceDiagnostics() } : {}) }); return true; }
   if (url.pathname === "/api/history" || /^\/api\/history\/(?:entity\/\d+|relationship\/.+)$/.test(url.pathname)) {
     const type = optionalString(url, "type");
     if (type !== undefined) enumValue(url, "type", OCCURRENCE_TYPES, OCCURRENCE_TYPES[0]);

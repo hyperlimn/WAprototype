@@ -129,10 +129,18 @@ export function bindOperatorConsole(root: HTMLElement): void {
       renderRuns();
     } catch { /* Bridge status already communicates availability. */ }
     try { const value = await supervisorRequest("/runs") as { runs: OperatorRun[] }; serviceRuns = value.runs; observeCompletions(serviceRuns); renderRuns();
-      const status = await supervisorRequest("/status") as { services: Array<{ id: string; owned: boolean; pid: number | null; url: string }>; lastRestart: (OperatorRun & { phase?: string }) | null };
+      const status = await supervisorRequest("/status") as { supervisorPid: number; duplicateProtoUniverseInstances: number;
+        manifestPersistence: { healthy?: boolean; writerPid?: number; lastRetryCount?: number; reason?: string };
+        services: Array<{ id: string; owned: boolean; pid: number | null; url: string }>; lastRestart: (OperatorRun & { phase?: string }) | null };
       const frontend = status.services.find((item) => item.id === "frontend"), bridge = status.services.find((item) => item.id === "bridge-api");
       document.querySelector<HTMLElement>("#supervisorFrontend")!.textContent = frontend?.owned ? `managed · PID ${frontend.pid}` : "not managed";
       document.querySelector<HTMLElement>("#supervisorBridge")!.textContent = bridge?.owned ? `managed · PID ${bridge.pid}` : "not managed";
+      document.querySelector<HTMLElement>("#supervisorPid")!.textContent = `PID ${status.supervisorPid}`;
+      document.querySelector<HTMLElement>("#runtimeDuplicates")!.textContent = status.duplicateProtoUniverseInstances === 0 ? "0"
+        : status.duplicateProtoUniverseInstances < 0 ? "warning · scan unavailable" : `warning · ${status.duplicateProtoUniverseInstances}`;
+      document.querySelector<HTMLElement>("#manifestPersistence")!.textContent = status.manifestPersistence.healthy
+        ? `healthy · PID ${status.manifestPersistence.writerPid}${status.manifestPersistence.lastRetryCount ? ` · ${status.manifestPersistence.lastRetryCount} retries` : ""}`
+        : `warning · ${status.manifestPersistence.reason ?? "write failure"}`;
       document.querySelector<HTMLElement>("#lastRestartResult")!.textContent = status.lastRestart ? `${status.lastRestart.status} · ${status.lastRestart.phase ?? ""}` : "none";
       supervisorStatus.textContent = "Supervisor ready · localhost:8790";
       if (Date.now() >= saveRefreshAt) { saveRefreshAt = Date.now() + 5_000; void loadSaves().catch(() => undefined); }

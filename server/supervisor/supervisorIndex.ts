@@ -8,7 +8,7 @@ const localOrigin = (request: IncomingMessage): boolean => !request.headers.orig
 const server = createServer(async (request, response) => {
   if (!localOrigin(request)) return json(response, 403, { error: "supervisor_origin_forbidden" });
   if (request.method === "OPTIONS") return json(response, 204, null);
-  if (request.method === "GET" && request.url === "/api/supervisor/status") return json(response, 200, supervisor.status());
+  if (request.method === "GET" && request.url === "/api/supervisor/status") return json(response, 200, await supervisor.runtimeDiagnostics());
   if (request.method === "GET" && request.url === "/api/supervisor/runs") return json(response, 200, { runs: supervisor.list() });
   if (request.method === "GET" && request.url === "/api/supervisor/save-states") {
     try { return json(response, 200, await supervisor.listSaveStates()); }

@@ -85,4 +85,6 @@ export interface MemoryStatus {
   enabled: boolean; mode: MemoryMode; memorySchemaVersion: string; seed: string | null;
   persistedEventCount: number; latestPersistedTick: number | null; checkpointCount: number;
   segmentCount: number; activeSegmentSize: number; diskBytes: number; recentCacheCount: number;
+  manifestPersistence?: { writerPid: number; universe: string | null; activeWrites: number; maximumConcurrentWrites: number;
+    lastSuccessfulWriteAt: string | null; lastFailure: { at: string; message: string; code: string | null } | null; lastRetryCount: number };
 }

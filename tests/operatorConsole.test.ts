@@ -4,7 +4,7 @@ import { PassThrough } from "node:stream";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import type { ChildProcess, spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { COMMAND_REGISTRY, formatRegistryHelp } from "../src/operator/commandRegistry.js";
 import { OperatorManager, validateOperatorArguments } from "../server/operator/operatorManager.js";
 import { ServiceSupervisor, SUPERVISOR_HOST, type SupervisorDependencies } from "../server/supervisor/serviceSupervisor.js";
@@ -12,6 +12,7 @@ import { createServer } from "node:http";
 import { corsHeaders } from "../server/cors.js";
 import type { SaveStateStore } from "../server/save-state/saveStateStore.js";
 import { requestOperatorJson } from "../src/ui/operatorApi.js";
+import { reverifyRepoProcess, staleRepoProcesses, terminateWindowsProcessTree, verifyRepoProcess, type RuntimeProcess } from "../server/supervisor/processOwnership.js";
 
 class FakeChild extends EventEmitter { stdout = new PassThrough(); stderr = new PassThrough(); pid = 1234; exitCode: number | null = null; kill() { return true; } }
 
@@ -54,6 +55,70 @@ test("loopback supervisor is allowlisted and never replaces an unmanaged bridge"
   const blocked = new ServiceSupervisor(process.cwd(), dependencies);
   await assert.rejects(() => blocked.startOrRestart("service.bridge-api.restart"), /unmanaged process/); assert.equal(spawned, 0);
   await assert.rejects(() => blocked.startOrRestart("powershell"), /not allowlisted/); assert.throws(() => blocked.beginRestartAll("cmd"), /not allowlisted/);
+});
+
+test("same-repo runtime discovery classifies known entry points and ignores unrelated Node/Codex", () => {
+  const root = process.cwd(), q = (suffix: string) => `node.exe "${path.join(root, suffix)}"`;
+  const records: RuntimeProcess[] = [
+    { pid: process.pid, parentPid: 1, commandLine: q("server/supervisor/supervisorIndex.ts") },
+    { pid: 101, parentPid: 1, commandLine: q("server/index.ts") },
+    { pid: 102, parentPid: 1, commandLine: q("node_modules/vite/bin/vite.js") },
+    { pid: 103, parentPid: 1, commandLine: q("server/supervisor/supervisorIndex.ts") },
+    { pid: 104, parentPid: 1, commandLine: "node.exe C:\\other-repo\\server\\index.ts" },
+    { pid: 105, parentPid: 1, commandLine: `codex.exe ${q("server/index.ts")}` },
+  ];
+  assert.equal(verifyRepoProcess(root, records[1])?.kind, "bridge-api"); assert.equal(verifyRepoProcess(root, records[2])?.kind, "frontend");
+  assert.deepEqual(staleRepoProcesses(root, records, new Set([process.pid])).map((item) => [item.pid, item.kind]),
+    [[101, "bridge-api"], [102, "frontend"], [103, "supervisor"]]);
+  assert.equal(verifyRepoProcess(root, records[4]), null); assert.equal(verifyRepoProcess(root, records[5]), null);
+});
+
+test("Restart Everything removes only reverified same-repo stale processes and proves a single stack", async () => {
+  const root = process.cwd(), open = new Set<number>(), children = new Map<ChildProcess, number>(); let pid = 4000, resumeStarted = false;
+  const stale = new Map<number, RuntimeProcess>([
+    [5101, { pid: 5101, parentPid: 1, commandLine: `node.exe "${path.join(root, "server/index.ts")}"` }],
+    [5102, { pid: 5102, parentPid: 1, commandLine: `node.exe "${path.join(root, "node_modules/vite/bin/vite.js")}"` }],
+    [5103, { pid: 5103, parentPid: 1, commandLine: `node.exe "${path.join(root, "server/supervisor/supervisorIndex.ts")}"` }],
+    [5199, { pid: 5199, parentPid: 1, commandLine: "node.exe C:\\unrelated\\worker.js" }],
+  ]); const terminated: number[] = [];
+  const saved = { id: "save-000000000888", universe: "U0-hardening", tick: 888, path: path.join(root, "tmp-save.json"), checksum: { value: "hash" } };
+  const dependencies: SupervisorDependencies = {
+    spawn: ((_command, rawArgs, rawOptions) => { const args = rawArgs as readonly string[], options = rawOptions as { env: NodeJS.ProcessEnv };
+      const child = new FakeChild(); child.pid = ++pid; const port = args.some((arg) => arg.endsWith("index.ts")) ? 8787 : 5173;
+      open.add(port); children.set(child as unknown as ChildProcess, port); if (options.env.PROTOUNIVERSE_RESUME_SAVE) resumeStarted = true; return child as unknown as ChildProcess; }) as typeof spawn,
+    isPortOpen: async (port) => open.has(port), delay: async () => {},
+    terminate: async (child) => { const port = children.get(child)!; open.delete(port); (child as unknown as FakeChild).exitCode = 0; (child as unknown as FakeChild).emit("exit", 0); },
+    listProcesses: async () => [...stale.values()], terminateProcessTree: async (target) => { terminated.push(target); stale.delete(target); },
+    request: async (url) => url.endsWith("/api/save-state") ? response(saved) : url.endsWith("/api/health") ? response({ service: "bridge-api", ready: true })
+      : url.endsWith("/api/operator/stop-all") ? response({ stopped: [] }) : response(resumeStarted
+        ? { connected: true, seed: saved.universe, currentTick: 889, runtime: { mode: "resumed", sourceSaveTick: saved.tick } }
+        : { connected: true, seed: saved.universe, currentTick: saved.tick, runtime: { mode: "fresh" } }),
+  };
+  const supervisor = new ServiceSupervisor(root, dependencies); await supervisor.startInitialStack(); const started = supervisor.beginRestartAll("runtime.restart-all");
+  for (let attempt = 0; attempt < 100 && supervisor.list().find((run) => run.id === started.id)?.status === "running"; attempt++) await new Promise((resolve) => setImmediate(resolve));
+  const run = supervisor.list().find((item) => item.id === started.id)!; assert.equal(run.status, "completed");
+  assert.deepEqual(terminated.sort(), [5101, 5102, 5103]); assert.ok(stale.has(5199)); assert.match(run.output, /Scanning for stale[\s\S]*Single-instance verification passed/);
+});
+
+test("stale cleanup rejects PID reuse when command identity changes", async () => {
+  const root = process.cwd(), original = verifyRepoProcess(root, { pid: 7001, parentPid: 1, commandLine: `node.exe "${path.join(root, "server/index.ts")}"` })!;
+  assert.ok(reverifyRepoProcess(root, original, { ...original }));
+  assert.equal(reverifyRepoProcess(root, original, { pid: 7001, parentPid: 1, commandLine: "node.exe C:\\unrelated\\server\\index.ts" }), null);
+  assert.equal(reverifyRepoProcess(root, original, { ...original, commandLine: `node.exe "${path.join(root, "node_modules/vite/bin/vite.js")}"` }), null);
+});
+
+test("Windows process-tree cleanup removes a verified isolated duplicate and leaves an unrelated child alive", { skip: process.platform !== "win32" }, async () => {
+  const duplicate = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)", path.join(process.cwd(), "server/index.ts")], { windowsHide: true });
+  const unrelated = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)", "C:\\isolated-unrelated\\worker.js"], { windowsHide: true });
+  try {
+    assert.ok(duplicate.pid && unrelated.pid); const duplicateRecord = { pid: duplicate.pid, parentPid: process.pid, commandLine: duplicate.spawnargs.join(" ") };
+    const unrelatedRecord = { pid: unrelated.pid, parentPid: process.pid, commandLine: unrelated.spawnargs.join(" ") };
+    assert.equal(verifyRepoProcess(process.cwd(), duplicateRecord)?.kind, "bridge-api"); assert.equal(verifyRepoProcess(process.cwd(), unrelatedRecord), null);
+    const exited = new Promise<void>((resolve) => duplicate.once("exit", () => resolve())); await terminateWindowsProcessTree(duplicate.pid); await exited;
+    assert.equal(unrelated.exitCode, null);
+  } finally {
+    if (duplicate.exitCode === null) duplicate.kill(); if (unrelated.exitCode === null) unrelated.kill();
+  }
 });
 
 test("restart-all saves first, stops only owned services, resumes that save, and retains its log", async () => {

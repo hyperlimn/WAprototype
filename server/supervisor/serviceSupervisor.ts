@@ -3,6 +3,7 @@ import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process"
 import net from "node:net";
 import path from "node:path";
 import { SaveStateStore, validateSaveId, type SaveStateSummary } from "../save-state/saveStateStore.js";
+import { listWindowsProcesses, requestWindowsProcessTreeStop, reverifyRepoProcess, staleRepoProcesses, terminateWindowsProcessTree, type RuntimeProcess, type VerifiedRuntimeProcess } from "./processOwnership.js";
 
 export const SUPERVISOR_HOST = "127.0.0.1";
 export const SUPERVISOR_PORT = 8790;
@@ -19,6 +20,8 @@ export interface SupervisorDependencies {
   spawn: typeof spawn; isPortOpen(port: number): Promise<boolean>;
   request(url: string, init?: RequestInit): Promise<{ ok: boolean; status: number; json(): Promise<any> }>;
   terminate(child: ChildProcess): Promise<void>; delay(ms: number): Promise<void>;
+  listProcesses?(): Promise<RuntimeProcess[]>; terminateProcessTree?(pid: number): Promise<void>;
+  requestProcessTreeStop?(pid: number): Promise<void>;
 }
 
 const portOpen = (port: number): Promise<boolean> => new Promise((resolve) => { const socket = net.createConnection({ host: SUPERVISOR_HOST, port });
@@ -32,17 +35,35 @@ const terminateOwned = async (child: ChildProcess): Promise<void> => {
   }
 };
 const defaults: SupervisorDependencies = { spawn, isPortOpen: portOpen, request: fetch as SupervisorDependencies["request"], terminate: terminateOwned,
-  delay: (ms) => new Promise((resolve) => setTimeout(resolve, ms)) };
+  delay: (ms) => new Promise((resolve) => setTimeout(resolve, ms)), listProcesses: listWindowsProcesses,
+  requestProcessTreeStop: requestWindowsProcessTreeStop, terminateProcessTree: terminateWindowsProcessTree };
 
 export class ServiceSupervisor {
   private readonly children = new Map<ManagedServiceId, ChildProcess>();
   private readonly runs: ServiceRun[] = [];
   private restartActive = false;
+  private diagnosticsCache: { expiresAt: number; value: { duplicateProtoUniverseInstances: number; processDiscoveryWarning: string | null; manifestPersistence: unknown } } | null = null;
   constructor(readonly root = process.cwd(), readonly dependencies: SupervisorDependencies = defaults,
     readonly saveStates = new SaveStateStore(path.join(root, "data", "universes"))) {}
   list(): readonly ServiceRun[] { return [...this.runs].reverse().map((run) => ({ ...run, save: run.save && { ...run.save } })); }
   status() { return { services: MANAGED_SERVICES.map((service) => ({ ...service, owned: this.isOwned(service.id), pid: this.children.get(service.id)?.pid ?? null })),
-    lastRestart: [...this.runs].reverse().find((run) => run.commandId === "runtime.restart-all" || run.commandId === "runtime.resume-save") ?? null }; }
+    supervisorPid: process.pid, lastRestart: [...this.runs].reverse().find((run) => run.commandId === "runtime.restart-all" || run.commandId === "runtime.resume-save") ?? null }; }
+  async runtimeDiagnostics() {
+    if (!this.diagnosticsCache || Date.now() >= this.diagnosticsCache.expiresAt) {
+      let processes: RuntimeProcess[] = [], processDiscoveryWarning: string | null = null;
+      try { processes = await this.listProcesses(); } catch (error) { processDiscoveryWarning = error instanceof Error ? error.message : String(error); }
+      const keep = new Set([process.pid, ...[...this.children.values()].map((child) => child.pid).filter((pid): pid is number => Boolean(pid))]);
+      let manifestPersistence: unknown = { healthy: false, reason: "Bridge/API unavailable" };
+      try { const memory = await this.requestJson("http://127.0.0.1:8787/api/memory/status");
+        const diagnostics = memory.manifestPersistence; manifestPersistence = diagnostics
+          ? { ...diagnostics, healthy: diagnostics.lastFailure === null } : { healthy: false, reason: "No active manifest writer diagnostics" }; }
+      catch (error) { manifestPersistence = { healthy: false, reason: error instanceof Error ? error.message : String(error) }; }
+      this.diagnosticsCache = { expiresAt: Date.now() + 3_000,
+        value: { duplicateProtoUniverseInstances: processDiscoveryWarning ? -1 : staleRepoProcesses(this.root, processes, keep).length,
+          processDiscoveryWarning, manifestPersistence } };
+    }
+    return { ...this.status(), ...this.diagnosticsCache.value };
+  }
   private isOwned(id: ManagedServiceId): boolean { const child = this.children.get(id); return Boolean(child && child.exitCode === null); }
   private record(commandId: SupervisorCommand, command: string): ServiceRun { const run: ServiceRun = { id: randomUUID(), commandId, command,
       startedAt: new Date().toISOString(), finishedAt: null, status: "running", output: "", pid: null, url: "", phase: "starting", reloadReady: false };
@@ -84,6 +105,45 @@ export class ServiceSupervisor {
       await this.dependencies.delay(100);
     }
     throw new Error(`${service.label} did not become application-ready`);
+  }
+  private listProcesses(): Promise<RuntimeProcess[]> { return this.dependencies.listProcesses?.() ?? Promise.resolve([]); }
+  private async terminateStale(target: VerifiedRuntimeProcess, run: ServiceRun): Promise<void> {
+    const current = (await this.listProcesses()).find((item) => item.pid === target.pid), verified = reverifyRepoProcess(this.root, target, current);
+    if (!verified)
+      throw new Error(`PID ${target.pid} changed identity during cleanup; refusing termination`);
+    if (target.pid === process.pid) throw new Error("Current supervisor can never be targeted");
+    if (this.dependencies.requestProcessTreeStop) {
+      await this.dependencies.requestProcessTreeStop(target.pid).catch(() => undefined);
+      for (let attempt = 0; attempt < 10; attempt++) {
+        if (!(await this.listProcesses()).some((item) => item.pid === target.pid)) { this.append(run, `Gracefully terminated stale ${target.kind} PID ${target.pid} tree\n`); return; }
+        await this.dependencies.delay(100);
+      }
+      const afterGrace = (await this.listProcesses()).find((item) => item.pid === target.pid);
+      if (!reverifyRepoProcess(this.root, target, afterGrace)) throw new Error(`PID ${target.pid} changed identity before forced cleanup; refusing termination`);
+    }
+    await (this.dependencies.terminateProcessTree ?? terminateWindowsProcessTree)(target.pid);
+    this.append(run, `Terminated stale ${target.kind} PID ${target.pid} tree\n`);
+  }
+  private async cleanupStaleRuntime(run: ServiceRun): Promise<void> {
+    this.append(run, "Scanning for stale ProtoUniverse instances...\n");
+    const keep = new Set([process.pid]), stale = staleRepoProcesses(this.root, await this.listProcesses(), keep);
+    if (!stale.length) this.append(run, "No stale verified ProtoUniverse instances found\n");
+    for (const item of stale) {
+      this.append(run, `Found stale ${item.kind} PID ${item.pid}\n  repo: ${this.root}\n  command: ${item.commandLine}\n`);
+      await this.terminateStale(item, run);
+    }
+  }
+  private async verifyNoStaleRuntime(run: ServiceRun): Promise<void> {
+    const remaining = staleRepoProcesses(this.root, await this.listProcesses(), new Set([process.pid]));
+    if (remaining.length) throw new Error(`Single-instance verification failed: ${remaining.map((item) => `${item.kind} PID ${item.pid}`).join(", ")}`);
+    this.append(run, "Canonical ports are free; no other verified ProtoUniverse instances remain\n");
+  }
+  private async verifySingleInstance(run: ServiceRun): Promise<void> {
+    const expected = new Set([process.pid, ...[...this.children.values()].map((child) => child.pid).filter((pid): pid is number => Boolean(pid))]);
+    const stale = staleRepoProcesses(this.root, await this.listProcesses(), expected);
+    if (stale.length) throw new Error(`Single-instance verification failed: ${stale.map((item) => `${item.kind} PID ${item.pid}`).join(", ")}`);
+    if (!this.isOwned("frontend") || !this.isOwned("bridge-api")) throw new Error("Single-instance verification requires one owned frontend and bridge");
+    this.append(run, "Single-instance verification passed\n");
   }
   async startInitialStack(): Promise<ServiceRun> { const run = this.record("service.bridge-api.restart", "npm run dev");
     try {
@@ -162,7 +222,9 @@ export class ServiceSupervisor {
       run.phase = "stopping-jobs"; this.append(run, "Stopping GUI-owned operator jobs...\n");
       await this.requestJson("http://127.0.0.1:8787/api/operator/stop-all", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       run.phase = "stopping-services"; await this.stopService("frontend", run); await this.stopService("bridge-api", run);
+      run.phase = "cleaning-stale-processes"; await this.cleanupStaleRuntime(run);
       await this.waitPort(5173, false); await this.waitPort(8787, false);
+      await this.verifyNoStaleRuntime(run);
       const resumeEnv = { ...process.env, PROTOUNIVERSE_RESUME_SAVE: selected.path, VITE_PROTOUNIVERSE_RESUME: "1" };
       run.phase = "starting-services"; this.append(run, `${source.kind === "save-current" ? "Resuming" : "Loading"} ${selected.id}...\n`);
       this.spawnService("bridge-api", resumeEnv, run); await this.waitServiceHealthy("bridge-api");
@@ -175,6 +237,7 @@ export class ServiceSupervisor {
           const sourceMatches = source.kind === "save-current" || status.runtime?.sourceSaveId === selected.id;
           if (status.connected && status.seed === selected.universe && status.runtime?.mode === "resumed"
             && sourceMatches && status.runtime?.sourceSaveTick === selected.tick && status.currentTick >= selected.tick) {
+            await this.verifySingleInstance(run);
             run.status = "completed"; run.phase = "healthy"; run.finishedAt = new Date().toISOString();
             this.append(run, source.kind === "save-current"
               ? `Runtime healthy\nUniverse ${selected.universe} resumed at tick ${status.currentTick}\nRestart complete\n`

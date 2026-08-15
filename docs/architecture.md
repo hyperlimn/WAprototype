@@ -48,6 +48,8 @@ Current aggregates in `WorldState`, diagnostics in `src/observation/`, oscillati
 
 `src/simulation/saveState.ts` defines the executable continuation schema `protouniverse-save-state/2`. `server/save-state/` writes immutable artifacts and verifies compatibility/checksums. Version-1 saves below tick 500,000 migrate explicitly into Law Epoch 0; later version-1 saves fail closed because Law Evolution did not shape their past. `server/memory/` owns observational archives and checkpoints. Checkpoints are evidence; save states are executable continuation points. Neither is presentation state.
 
+Memory manifests use a per-path serialized atomic publisher: a unique temporary file is completely written, flushed, and closed before an atomic rename replaces the manifest. Transient Windows `EPERM`, `EBUSY`, and `EACCES` replacement failures receive six bounded deterministic attempts; the previous manifest is never unlinked, and final failure propagates to the caller. Runtime ownership separately prevents independent Bridge processes from becoming competing writers.
+
 Save compatibility rule: do not change the continuation schema, state meaning, PRNG semantics, or law order without an explicit version and migration decision.
 
 ### Observation and query
@@ -72,7 +74,7 @@ Save compatibility rule: do not change the continuation schema, state meaning, P
 
 ### Bridge, operator tools, and supervisor
 
-`server/index.ts` hosts the loopback Bridge/API, receives browser-authoritative snapshots, serves observational queries, and runs allowlisted operator jobs. `server/supervisor/` is the control plane and owns the frontend and Bridge/API child PIDs. Runtime replacement uses immutable save-state continuation, semantic health checks, browser reconnection, and provenance verification. It may stop only tracked children and must never expose arbitrary commands or paths.
+`server/index.ts` hosts the loopback Bridge/API, receives browser-authoritative snapshots, serves observational queries, and runs allowlisted operator jobs. `server/supervisor/` is the control plane and owns the frontend and Bridge/API child PIDs. Runtime replacement uses immutable save-state continuation, semantic health checks, browser reconnection, and provenance verification. It may stop only tracked children and must never expose arbitrary commands or paths. Restart cleanup inventories Windows command lines using the exact repository path plus reviewed entry-point signatures, re-verifies PID identity immediately before termination, excludes the handling supervisor and Codex, and fails closed on unknown port owners.
 
 ## Boundaries to preserve
 

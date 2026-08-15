@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import type { CanonicalSnapshot } from "../types.js";
 import type { OccurrenceRecord } from "../../src/query/queryTypes.js";
@@ -7,6 +7,7 @@ import { MEMORY_SCHEMA_VERSION, type CheckpointMetadata, type HistoryQuery, type
 import type { MemoryPolicy } from "../../src/memory/memoryPolicy.js";
 import { classifyNotability } from "./notability.js";
 import { buildEraSummaries } from "./condensedMemory.js";
+import { atomicJsonFile } from "./atomicJsonFile.js";
 
 const safeSeed = (seed: string): string => seed.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "unknown";
 const segmentName = (index: number): string => `events-${String(index).padStart(6, "0")}.jsonl`;
@@ -19,11 +20,10 @@ const freshManifest = (identity: MemoryIdentity, mode: MemoryPolicy["mode"], now
   occurrenceTypesSeen: [],
 });
 
-const atomicJson = async (file: string, value: unknown): Promise<void> => {
-  const temporary = `${file}.${process.pid}.tmp`;
-  await writeFile(temporary, JSON.stringify(value, null, 2), "utf8");
-  await rename(temporary, file);
-};
+export interface ManifestPersistenceDiagnostics {
+  writerPid: number; universe: string | null; activeWrites: number; maximumConcurrentWrites: number;
+  lastSuccessfulWriteAt: string | null; lastFailure: { at: string; message: string; code: string | null } | null; lastRetryCount: number;
+}
 
 export class MemoryStore {
   private identity: MemoryIdentity | null = null;
@@ -33,6 +33,8 @@ export class MemoryStore {
   private recentKeys = new Set<string>();
   private readonly recentKeyOrder: string[] = [];
   private readonly segmentCache = new Map<string, { signature: string; parsed: { events: PersistedEvent[]; malformed: number } }>();
+  private readonly manifestPersistence: ManifestPersistenceDiagnostics = { writerPid: process.pid, universe: null, activeWrites: 0,
+    maximumConcurrentWrites: 0, lastSuccessfulWriteAt: null, lastFailure: null, lastRetryCount: 0 };
   private static readonly SEGMENT_CACHE_LIMIT = 4;
 
   constructor(readonly root: string, readonly policy: MemoryPolicy) {}
@@ -69,7 +71,7 @@ export class MemoryStore {
       const stored: StoredCheckpoint = { memorySchemaVersion: MEMORY_SCHEMA_VERSION, ...identity, tick, eventSequence,
         recordedAt, snapshot };
       const file = path.join(this.requireDir(), "checkpoints", checkpointName(tick));
-      await atomicJson(file, stored);
+      await atomicJsonFile(file, stored);
       const bytes = (await stat(file)).size;
       const metadata: CheckpointMetadata = { file: `checkpoints/${checkpointName(tick)}`, tick, eventSequence, bytes, createdAt: recordedAt };
       const manifest = this.requireManifest();
@@ -144,13 +146,15 @@ export class MemoryStore {
       seed: manifest?.seed ?? null, persistedEventCount: manifest?.eventCount ?? 0,
       latestPersistedTick: manifest?.latestTick ?? null, checkpointCount: manifest?.checkpointCount ?? 0,
       segmentCount: manifest?.segmentCount ?? 0, activeSegmentSize: manifest?.segments.at(-1)?.eventCount ?? 0,
-      diskBytes, recentCacheCount };
+      diskBytes, recentCacheCount, manifestPersistence: this.persistenceDiagnostics() };
   }
+
+  persistenceDiagnostics(): ManifestPersistenceDiagnostics { return structuredClone(this.manifestPersistence); }
 
   private enqueue(action: () => Promise<void>): Promise<void> {
     const next = this.operation.then(action);
     this.operation = next.catch((error) => console.error("ProtoUniverse memory operation failed", error));
-    return this.operation;
+    return next;
   }
 
   private async activate(identity: MemoryIdentity): Promise<void> {
@@ -275,6 +279,16 @@ export class MemoryStore {
   private requireDir(): string { if (!this.universeDir) throw new Error("Memory identity is unavailable"); return this.universeDir; }
   private async persistManifest(): Promise<void> {
     const manifest = this.requireManifest(); manifest.lastUpdatedAt = new Date().toISOString();
-    await atomicJson(path.join(this.requireDir(), "manifest.json"), manifest);
+    this.manifestPersistence.universe = manifest.seed; this.manifestPersistence.activeWrites++;
+    this.manifestPersistence.maximumConcurrentWrites = Math.max(this.manifestPersistence.maximumConcurrentWrites, this.manifestPersistence.activeWrites);
+    try {
+      const result = await atomicJsonFile(path.join(this.requireDir(), "manifest.json"), manifest);
+      this.manifestPersistence.lastSuccessfulWriteAt = new Date().toISOString(); this.manifestPersistence.lastRetryCount = result.retries;
+      this.manifestPersistence.lastFailure = null;
+    } catch (error) {
+      this.manifestPersistence.lastFailure = { at: new Date().toISOString(), message: error instanceof Error ? error.message : String(error),
+        code: (error as NodeJS.ErrnoException).code ?? null };
+      throw error;
+    } finally { this.manifestPersistence.activeWrites--; }
   }
 }

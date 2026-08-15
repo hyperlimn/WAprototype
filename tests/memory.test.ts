@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, open, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -18,6 +18,7 @@ import { findSimilarEntity } from "../src/perception/similarity.js";
 import { compareEntities, compareUniverses } from "../src/perception/comparison.js";
 import { detectChanges } from "../src/perception/changeDetection.js";
 import { ObserverStore } from "../server/perception/observerStore.js";
+import { atomicJsonFile, type AtomicJsonFileSystem } from "../server/memory/atomicJsonFile.js";
 
 const identity = { seed: "test-seed", simulationVersion: "u0.6", interfaceVersion: "protouniverse-machine-interface/5" };
 const complete: MemoryPolicy = { mode: "complete", checkpointIntervalTicks: 25_000, segmentMaxEvents: 2,
@@ -96,6 +97,49 @@ test("malformed persisted records fail safely", async () => {
     const result = await value.store.queryHistory({ limit: 10 });
     assert.equal(result.results.length, 1); assert.equal(result.malformedRecordCount, 1);
   } finally { await value.close(); }
+});
+
+test("manifest publication serializes rapid writes and retries transient Windows replacement failures", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "protouniverse-atomic-manifest-")), file = path.join(root, "manifest.json");
+  let active = 0, maximum = 0, failures = 2; const delays: number[] = [];
+  const fs: AtomicJsonFileSystem = {
+    async writeAndSync(target, contents) { const handle = await open(target, "wx"); try { await handle.writeFile(contents); await handle.sync(); } finally { await handle.close(); } },
+    async replace(source, destination) { active++; maximum = Math.max(maximum, active); try {
+      if (failures-- > 0) { const error = new Error("locked") as NodeJS.ErrnoException; error.code = "EPERM"; throw error; }
+      await new Promise((resolve) => setTimeout(resolve, 2)); await rename(source, destination);
+    } finally { active--; } },
+    remove: (target) => rm(target, { force: true }), delay: async (ms) => { delays.push(ms); },
+  };
+  try {
+    const writes = await Promise.all(Array.from({ length: 8 }, (_, index) => atomicJsonFile(file, { memorySchemaVersion: "protouniverse-memory/1", index }, fs)));
+    assert.equal(maximum, 1); assert.deepEqual(delays, [10, 20]); assert.equal(writes[0].retries, 2);
+    const manifest = JSON.parse(await readFile(file, "utf8")); assert.equal(manifest.index, 7);
+    assert.deepEqual((await readdir(root)).filter((name) => name.endsWith(".tmp")), []);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("failed manifest replacement preserves the previous valid manifest and reports failure", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "protouniverse-atomic-failure-")), file = path.join(root, "manifest.json");
+  await writeFile(file, JSON.stringify({ valid: true }), "utf8");
+  const fs: AtomicJsonFileSystem = {
+    async writeAndSync(target, contents) { await writeFile(target, contents, { flag: "wx" }); },
+    async replace() { const error = new Error("still locked") as NodeJS.ErrnoException; error.code = "EPERM"; throw error; },
+    remove: (target) => rm(target, { force: true }), delay: async () => {},
+  };
+  try {
+    await assert.rejects(() => atomicJsonFile(file, { valid: false }, fs), /still locked/);
+    assert.deepEqual(JSON.parse(await readFile(file, "utf8")), { valid: true });
+    assert.deepEqual((await readdir(root)).filter((name) => name.endsWith(".tmp")), []);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("MemoryStore propagates persistence failures instead of reporting false success", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "protouniverse-memory-failure-")), originalError = console.error; console.error = () => {};
+  try {
+    const store = new MemoryStore(root, complete); await store.setIdentity(identity);
+    await rm(path.join(root, "universes", identity.seed), { recursive: true, force: true });
+    await assert.rejects(() => store.ingestEvents([event(1, 1)], identity));
+  } finally { console.error = originalError; await rm(root, { recursive: true, force: true }); }
 });
 
 test("catalog lists multiple validated archives and isolates malformed manifests", async () => {
