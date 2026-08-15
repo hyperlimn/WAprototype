@@ -12,7 +12,7 @@ import { createServer } from "node:http";
 import { corsHeaders } from "../server/cors.js";
 import type { SaveStateStore } from "../server/save-state/saveStateStore.js";
 import { requestOperatorJson } from "../src/ui/operatorApi.js";
-import { reverifyRepoProcess, staleRepoProcesses, terminateWindowsProcessTree, verifyRepoProcess, type RuntimeProcess } from "../server/supervisor/processOwnership.js";
+import { assertTreeTerminationSafe, processTreePids, protectSupervisorAncestry, reverifyRepoProcess, staleRepoProcesses, terminateWindowsProcessTree, verifyRepoProcess, type RuntimeProcess } from "../server/supervisor/processOwnership.js";
 
 class FakeChild extends EventEmitter { stdout = new PassThrough(); stderr = new PassThrough(); pid = 1234; exitCode: number | null = null; kill() { return true; } }
 
@@ -107,6 +107,43 @@ test("stale cleanup rejects PID reuse when command identity changes", async () =
   assert.equal(reverifyRepoProcess(root, original, { ...original, commandLine: `node.exe "${path.join(root, "node_modules/vite/bin/vite.js")}"` }), null);
 });
 
+test("Windows supervisor protection includes npm/tsx ancestry and refuses any tree containing the active PID", () => {
+  const records: RuntimeProcess[] = [
+    { pid: 8000, parentPid: 1, commandLine: "cmd.exe /d /s /c npm run dev:supervisor" },
+    { pid: 8001, parentPid: 8000, commandLine: "node.exe npm-cli.js run dev:supervisor" },
+    { pid: 8002, parentPid: 8001, commandLine: `node.exe tsx ${path.join(process.cwd(), "server/supervisor/supervisorIndex.ts")}` },
+    { pid: 8003, parentPid: 8002, commandLine: `node.exe ${path.join(process.cwd(), "server/supervisor/supervisorIndex.ts")}` },
+    { pid: 8100, parentPid: 1, commandLine: `node.exe ${path.join(process.cwd(), "server/supervisor/supervisorIndex.ts")}` },
+    { pid: 8101, parentPid: 1, commandLine: `node.exe ${path.join(process.cwd(), "server/index.ts")}` },
+    { pid: 8102, parentPid: 1, commandLine: `node.exe ${path.join(process.cwd(), "node_modules/vite/bin/vite.js")}` },
+    { pid: 8199, parentPid: 1, commandLine: "node.exe C:\\unrelated\\worker.js" },
+  ];
+  const protection = protectSupervisorAncestry(8003, records);
+  assert.deepEqual([...protection.protectedPids].sort(), [1, 8000, 8001, 8002, 8003]);
+  assert.deepEqual(staleRepoProcesses(process.cwd(), records, protection.protectedPids).map((item) => item.pid), [8100, 8101, 8102]);
+  assert.throws(() => assertTreeTerminationSafe(8000, records, protection), /contains active supervisor control plane PID/);
+  assert.throws(() => assertTreeTerminationSafe(8002, records, protection), /termination refused/);
+  assert.deepEqual([...processTreePids(8100, records)], [8100]);
+  assert.doesNotThrow(() => assertTreeTerminationSafe(8100, records, protection));
+  assert.ok(records.some((item) => item.pid === 8199), "unrelated process remains outside cleanup candidates");
+});
+
+test("runtime replacement fails before shutdown when active supervisor ancestry cannot be inventoried", async () => {
+  let stopped = 0;
+  const artifact = { id: "save-000000000222", universe: "U0-protection", tick: 222, createdAt: "2026-01-01T00:00:00.000Z",
+    simulationVersion: "test", checksum: { algorithm: "sha256", value: "hash" }, continuation: {} };
+  const store = { file: () => "canonical", load: async () => artifact, list: async () => [] } as unknown as SaveStateStore;
+  const dependencies: SupervisorDependencies = { spawn: (() => new FakeChild() as unknown as ChildProcess) as typeof spawn,
+    isPortOpen: async () => false, terminate: async () => { stopped++; }, delay: async () => {}, currentPid: 9003,
+    requireCompleteProcessProtection: true, listProcesses: async () => [{ pid: 9002, parentPid: 9001, commandLine: "node.exe tsx" }],
+    request: async () => response({ connected: true, seed: artifact.universe, currentTick: 500, runtime: { mode: "fresh" } }) };
+  const supervisor = new ServiceSupervisor(process.cwd(), dependencies, store), started = supervisor.beginResumeSave("runtime.resume-save", artifact.id);
+  for (let attempt = 0; attempt < 30 && supervisor.list().find((item) => item.id === started.id)?.status === "running"; attempt++) await new Promise((resolve) => setImmediate(resolve));
+  const run = supervisor.list().find((item) => item.id === started.id)!;
+  assert.equal(run.status, "failed"); assert.equal(stopped, 0);
+  assert.match(run.output, /phase: protecting-control-plane[\s\S]*protected ancestry cannot be guaranteed/);
+});
+
 test("Windows process-tree cleanup removes a verified isolated duplicate and leaves an unrelated child alive", { skip: process.platform !== "win32" }, async () => {
   const duplicate = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)", path.join(process.cwd(), "server/index.ts")], { windowsHide: true });
   const unrelated = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)", "C:\\isolated-unrelated\\worker.js"], { windowsHide: true });
@@ -122,14 +159,14 @@ test("Windows process-tree cleanup removes a verified isolated duplicate and lea
 });
 
 test("restart-all saves first, stops only owned services, resumes that save, and retains its log", async () => {
-  const events: string[] = [], open = new Set<number>(), children = new Map<ChildProcess, number>(); let pid = 2000;
+  const events: string[] = [], open = new Set<number>(), children = new Map<ChildProcess, number>(); let pid = 2000, supervisorHealthChecks = 0;
   const save = { id: "save-000000000777", universe: "U0-test", tick: 777, path: "data/universes/U0-test/save-states/save-000000000777.json",
     checksum: { algorithm: "sha256", value: "abc123" } }; const originalSave = JSON.stringify(save);
   const dependencies: SupervisorDependencies = {
     spawn: ((_command, rawArgs, rawOptions) => { const args = rawArgs as readonly string[]; const options = rawOptions as { env: NodeJS.ProcessEnv };
       const child = new FakeChild(); child.pid = ++pid; const port = args.some((arg) => arg.endsWith("index.ts")) ? 8787 : 5173;
       children.set(child as unknown as ChildProcess, port); open.add(port); events.push(`spawn:${port}:${options.env.PROTOUNIVERSE_RESUME_SAVE ?? "fresh"}`); return child as unknown as ChildProcess; }) as typeof spawn,
-    isPortOpen: async (port) => open.has(port),
+    isPortOpen: async (port) => open.has(port), isSupervisorListening: async () => { supervisorHealthChecks++; return true; },
     terminate: async (child) => { const port = children.get(child)!; events.push(`stop:${port}:${child.pid}`); open.delete(port); (child as unknown as FakeChild).exitCode = 0; (child as unknown as FakeChild).emit("exit", 0); },
     request: async (url) => { events.push(`request:${url}`); if (url.endsWith("/api/health")) return response({ service: "bridge-api", ready: true });
       if (url.endsWith("/api/save-state")) return response(save);
@@ -144,6 +181,7 @@ test("restart-all saves first, stops only owned services, resumes that save, and
   assert.equal(events[0], "request:http://127.0.0.1:8787/api/save-state"); assert.ok(events.indexOf("request:http://127.0.0.1:8787/api/operator/stop-all") < events.findIndex((item) => item.startsWith("stop:")));
   assert.match(events.find((item) => item.startsWith("spawn:8787:")) ?? "", /save-000000000777\.json/); assert.equal(JSON.stringify(save), originalSave);
   assert.match(finished.output, /Saved U0-test at tick 777[\s\S]*Stopping Frontend[\s\S]*Resuming save-[\s\S]*Restart complete/);
+  assert.equal(supervisorHealthChecks, 1); assert.equal(supervisor.status().supervisorPid, process.pid);
   assert.equal(supervisor.list().find((run) => run.id === started.id)?.output, finished.output, "log survives client disconnection/reconnection");
 });
 
@@ -181,7 +219,7 @@ test("an open Bridge/API port without semantic readiness is rejected", async () 
 });
 
 test("selected-save resume resolves an ID internally, preserves the artifact, and retains its log", async () => {
-  const events: string[] = [], open = new Set<number>(), children = new Map<ChildProcess, number>(); let pid = 3000, resumeStarted = false;
+  const events: string[] = [], open = new Set<number>(), children = new Map<ChildProcess, number>(); let pid = 3000, resumeStarted = false, supervisorHealthChecks = 0;
   const artifact = { id: "save-000000000321", universe: "U0-selected", tick: 321, createdAt: "2026-01-01T00:00:00.000Z",
     simulationVersion: "test", checksum: { algorithm: "sha256", value: "selectedhash" }, continuation: {} }; const frozen = JSON.stringify(artifact);
   const store = { file: (universe: string, id: string) => path.join("C:\\canonical", universe, `${id}.json`),
@@ -190,7 +228,7 @@ test("selected-save resume resolves an ID internally, preserves the artifact, an
     spawn: ((_command, rawArgs, rawOptions) => { const args = rawArgs as readonly string[], options = rawOptions as { env: NodeJS.ProcessEnv };
       const child = new FakeChild(); child.pid = ++pid; const port = args.some((arg) => arg.endsWith("index.ts")) ? 8787 : 5173;
       if (options.env.PROTOUNIVERSE_RESUME_SAVE) resumeStarted = true; children.set(child as unknown as ChildProcess, port); open.add(port); events.push(`spawn:${port}`); return child as unknown as ChildProcess; }) as typeof spawn,
-    isPortOpen: async (port) => open.has(port), delay: async () => {},
+    isPortOpen: async (port) => open.has(port), isSupervisorListening: async () => { supervisorHealthChecks++; return true; }, delay: async () => {},
     terminate: async (child) => { const port = children.get(child)!; events.push(`stop:${port}:${child.pid}`); open.delete(port); (child as unknown as FakeChild).exitCode = 0; (child as unknown as FakeChild).emit("exit", 0); },
     request: async (url) => { if (url.endsWith("/api/health")) return response({ service: "bridge-api", ready: true });
       if (url.endsWith("/api/operator/stop-all")) return response({ stopped: [] });
@@ -203,6 +241,7 @@ test("selected-save resume resolves an ID internally, preserves the artifact, an
   for (let attempt = 0; attempt < 100 && supervisor.list().find((run) => run.id === started.id)?.status === "running"; attempt++) await new Promise((resolve) => setImmediate(resolve));
   const finished = supervisor.list().find((run) => run.id === started.id)!; assert.equal(finished.status, "completed");
   assert.equal(events[0], `load:${artifact.universe}:${artifact.id}`); assert.ok(events.some((item) => item.startsWith("stop:5173:"))); assert.ok(events.some((item) => item.startsWith("stop:8787:")));
+  assert.equal(supervisorHealthChecks, 1); assert.equal(supervisor.status().supervisorPid, process.pid);
   assert.equal(JSON.stringify(artifact), frozen); assert.match(finished.output, /Loading save-000000000321[\s\S]*resumed from tick 321[\s\S]*Resume complete/);
   assert.equal(supervisor.list().find((run) => run.id === started.id)?.output, finished.output);
 });
