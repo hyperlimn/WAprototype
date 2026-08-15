@@ -26,6 +26,8 @@ Create a production build with `npm run build`, then inspect it locally with `np
 
 ## Architecture
 
+See [docs/architecture.md](docs/architecture.md) for the current layer map, dependency rules, state classifications, and versioned deterministic guardrails.
+
 - `src/simulation/` contains the renderer-independent universe, entity model, fingerprint decoding, seeded PRNG, grid spatial indexes, base physics, bond memory, relationship-entity lifecycle, dimensional state, relationship field, higher-order physics, and global measurements.
 - `src/rendering/` contains the Canvas renderer and pan/zoom camera.
 - `src/ui/` contains DOM controls, instruments, and entity inspection.

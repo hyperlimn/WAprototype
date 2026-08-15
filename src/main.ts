@@ -67,7 +67,7 @@ let tickCredit = 0;
 let schedulerTime = performance.now();
 let lastRenderTime = 0;
 let instrumentTimer = 0;
-let bridgeStatus: MachineBridgeStatus = { connected: false, lastPublishAt: null, lastSnapshotDurationMs: null };
+let bridgeStatus: MachineBridgeStatus = { connected: false, lastPublishAt: null, lastSnapshotDurationMs: null, lastSnapshotBytes: null };
 const closeup = bindEntityCloseup({
   invitation: document.querySelector<HTMLButtonElement>("#closeupInvitation")!,
   closeup: document.querySelector<HTMLElement>("#entityCloseup")!,

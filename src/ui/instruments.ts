@@ -1,7 +1,7 @@
 import type { Universe } from "../simulation/universe";
-import { buildRelationshipFormationDiagnostics } from "./relationshipDiagnostics";
-import { buildRuptureDiagnostics } from "./ruptureDiagnostics";
-import { buildRuptureCascadeDiagnostics } from "./ruptureCascadeDiagnostics";
+import { buildRelationshipFormationDiagnostics } from "../observation/relationshipDiagnostics";
+import { buildRuptureDiagnostics } from "../observation/ruptureDiagnostics";
+import { buildRuptureCascadeDiagnostics } from "../observation/ruptureCascadeDiagnostics";
 
 const row = (label: string, value: string) => `<div><dt>${label}</dt><dd>${value}</dd></div>`;
 

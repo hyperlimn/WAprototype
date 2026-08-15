@@ -107,8 +107,14 @@ const handleRequest = async (request: IncomingMessage, response: ServerResponse)
       seed: heartbeat?.seed ?? null, currentTick: heartbeat?.currentTick ?? null, entityCount: heartbeat?.entityCount ?? null,
       runtime: heartbeat?.runtime ?? null,
       lastBrowserUpdateMsAgo: store.lastBrowserUpdateAt === null ? null : Date.now() - store.lastBrowserUpdateAt,
-      lastSnapshotDurationMs: store.lastSnapshotDurationMs });
+      lastSnapshotDurationMs: store.lastSnapshotDurationMs,
+      observationMetrics: store.lastObservationMetrics,
+      simulationTimings: store.lastSimulationTimings });
   }
+  if (url.pathname === "/api/health") return json(response, 200, {
+    service: "bridge-api", ready: true, authoritativeBrowserConnected: browserConnected,
+    snapshotAvailable: store.snapshot !== null,
+  });
   if (url.pathname === "/api/runtime/bootstrap") {
     const selected = process.env.PROTOUNIVERSE_RESUME_SAVE;
     if (!selected) return json(response, 200, { mode: "fresh" });
@@ -184,7 +190,7 @@ server.on("upgrade", (request: IncomingMessage, socket) => {
       if (opcode === 8) return socket.end();
       if (opcode !== 1) continue;
       try {
-        const message = JSON.parse(payload.toString("utf8")) as { type?: string; requestId?: string; continuation?: UniverseContinuationState; error?: string; snapshot?: CanonicalSnapshot; occurrences?: OccurrenceRecord[]; serializationDurationMs?: number } & Heartbeat;
+        const message = JSON.parse(payload.toString("utf8")) as { type?: string; requestId?: string; continuation?: UniverseContinuationState; error?: string; snapshot?: CanonicalSnapshot; occurrences?: OccurrenceRecord[]; observationMetrics?: { buildDurationMs: number; serializedBytes: number; entityCount: number; relationshipCount: number }; simulationTimings?: unknown } & Heartbeat;
         if (message.interfaceVersion !== INTERFACE_VERSION) continue;
         if (message.type === "save-state-response" && message.requestId) {
           const pending = pendingSaves.get(message.requestId); if (!pending) continue; pendingSaves.delete(message.requestId);
@@ -193,7 +199,7 @@ server.on("upgrade", (request: IncomingMessage, socket) => {
           store.updateHeartbeat(message);
           void memory.setIdentity({ seed: message.seed, simulationVersion: message.simulationVersion, interfaceVersion: INTERFACE_VERSION });
         } else if (message.type === "snapshot" && message.snapshot) {
-          store.updateSnapshot(message.snapshot, message.serializationDurationMs);
+          store.updateSnapshot(message.snapshot, message.observationMetrics, message.simulationTimings);
           const seed = String(message.snapshot.metadata.seed ?? message.seed ?? "unknown");
           const simulationVersion = String(message.snapshot.metadata.simulationVersion ?? message.simulationVersion ?? "unknown");
           const identity = { seed, simulationVersion, interfaceVersion: INTERFACE_VERSION };

@@ -3,10 +3,11 @@ import { MAX_OCCURRENCES, type Occurrence } from "../simulation/occurrenceLog";
 import type { RelationshipEntity } from "../simulation/relationshipEntity";
 import { MAX_BASE_POPULATION } from "../simulation/reproduction";
 import { SIMULATION_VERSION, type Universe } from "../simulation/universe";
-import { buildRelationshipFormationDiagnostics } from "../ui/relationshipDiagnostics";
+import { buildRelationshipFormationDiagnostics } from "../observation/relationshipDiagnostics";
 import { ruptureParameters } from "../simulation/rupture";
-import { buildRuptureDiagnostics } from "../ui/ruptureDiagnostics";
-import { buildRuptureCascadeDiagnostics } from "../ui/ruptureCascadeDiagnostics";
+import { buildRuptureDiagnostics } from "../observation/ruptureDiagnostics";
+import { buildRuptureCascadeDiagnostics } from "../observation/ruptureCascadeDiagnostics";
+import { orderedEntities } from "../simulation/deterministicOrdering";
 import { oscillationAtTick } from "../simulation/oscillation";
 
 export const EXPORT_SCHEMA_VERSION = "universe-0-simulation-log/5";
@@ -90,7 +91,7 @@ const occurrenceRecord = (record: Occurrence) => ({
 
 export function buildWorldSnapshot(universe: Universe) {
   const state = universe.state;
-  const entities = [...universe.entities].sort((a, b) => a.creationIndex - b.creationIndex);
+  const entities = orderedEntities(universe.entities);
   const relationships = [...universe.relationshipLayer.entities.values()];
   const relationshipIdsByEntity = new Map<number, string[]>();
   for (const relationship of relationships) {

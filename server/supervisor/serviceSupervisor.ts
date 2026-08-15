@@ -7,8 +7,8 @@ import { SaveStateStore, type SaveStateSummary } from "../save-state/saveStateSt
 export const SUPERVISOR_HOST = "127.0.0.1";
 export const SUPERVISOR_PORT = 8790;
 export const MANAGED_SERVICES = Object.freeze([
-  { id: "frontend", label: "Frontend / Vite", url: "http://127.0.0.1:5173", port: 5173 },
-  { id: "bridge-api", label: "Bridge + Operator API", url: "http://127.0.0.1:8787", port: 8787 },
+  { id: "frontend", label: "Frontend / Vite", url: "http://127.0.0.1:5173", port: 5173, healthPath: "/" },
+  { id: "bridge-api", label: "Bridge + Operator API", url: "http://127.0.0.1:8787", port: 8787, healthPath: "/api/health" },
 ] as const);
 export type ManagedServiceId = typeof MANAGED_SERVICES[number]["id"];
 export type SupervisorCommand = "service.bridge-api.restart" | "runtime.restart-all" | "runtime.resume-save";
@@ -63,15 +63,32 @@ export class ServiceSupervisor {
     this.append(run, `Stopping ${MANAGED_SERVICES.find((item) => item.id === id)!.label}... PID ${child.pid}\n`); await this.dependencies.terminate(child); this.children.delete(id); }
   private async waitPort(port: number, expected: boolean, attempts = 80): Promise<void> { for (let index = 0; index < attempts; index++) {
       if (await this.dependencies.isPortOpen(port) === expected) return; await this.dependencies.delay(100); } throw new Error(`Port ${port} did not become ${expected ? "healthy" : "available"}`); }
+  private async waitServiceHealthy(id: ManagedServiceId, attempts = 80): Promise<void> {
+    const service = MANAGED_SERVICES.find((item) => item.id === id)!;
+    for (let index = 0; index < attempts; index++) {
+      try {
+        if (await this.dependencies.isPortOpen(service.port)) {
+          const response = await this.dependencies.request(`${service.url}${service.healthPath}`);
+          if (response.ok) {
+            if (id === "frontend") return;
+            const body = await response.json();
+            if (body?.service === "bridge-api" && body?.ready === true) return;
+          }
+        }
+      } catch { /* Service may be between bind and application readiness. */ }
+      await this.dependencies.delay(100);
+    }
+    throw new Error(`${service.label} did not become application-ready`);
+  }
   async startInitialStack(): Promise<ServiceRun> { const run = this.record("service.bridge-api.restart", "npm run dev");
     for (const service of MANAGED_SERVICES) if (!this.isOwned(service.id) && await this.dependencies.isPortOpen(service.port)) throw new Error(`${service.label} port is occupied by an unmanaged process`);
-    this.spawnService("bridge-api", process.env, run); await this.waitPort(8787, true); this.spawnService("frontend", process.env, run); await this.waitPort(5173, true);
+    this.spawnService("bridge-api", process.env, run); await this.waitServiceHealthy("bridge-api"); this.spawnService("frontend", process.env, run); await this.waitServiceHealthy("frontend");
     run.status = "completed"; run.phase = "healthy"; run.finishedAt = new Date().toISOString(); this.append(run, "Runtime stack healthy\n"); return { ...run };
   }
   async startOrRestart(action: unknown): Promise<ServiceRun> { if (action !== "service.bridge-api.restart") throw new Error("Service action is not allowlisted");
     const run = this.record(action, "npm run dev:bridge"); if (this.isOwned("bridge-api")) await this.stopService("bridge-api", run);
     else if (await this.dependencies.isPortOpen(8787)) throw new Error("Bridge/API port 8787 is occupied by an unmanaged process; refusing to terminate or replace it");
-    const child = this.spawnService("bridge-api", process.env, run); run.pid = child.pid ?? null; run.url = "http://127.0.0.1:8787"; await this.waitPort(8787, true);
+    const child = this.spawnService("bridge-api", process.env, run); run.pid = child.pid ?? null; run.url = "http://127.0.0.1:8787"; await this.waitServiceHealthy("bridge-api");
     run.status = "completed"; run.phase = "healthy"; run.finishedAt = new Date().toISOString(); this.append(run, "Bridge + Operator API ready\n"); return { ...run };
   }
   beginRestartAll(action: unknown): ServiceRun { if (action !== "runtime.restart-all") throw new Error("Runtime action is not allowlisted");
@@ -93,49 +110,61 @@ export class ServiceSupervisor {
   }
   private async requestJson(url: string, init?: RequestInit): Promise<any> { const response = await this.dependencies.request(url, init); const value = await response.json();
     if (!response.ok) throw new Error(value.message ?? value.error ?? `HTTP ${response.status}`); return value; }
-  private async restartAll(run: ServiceRun): Promise<void> { try {
-      run.phase = "saving"; this.append(run, "Saving current universe before restart...\n");
-      const saved = await this.requestJson("http://127.0.0.1:8787/api/save-state", { method: "POST" });
-      run.save = { id: saved.id, universe: saved.universe, tick: saved.tick, path: saved.path, checksum: saved.checksum.value };
-      this.append(run, `Saved ${saved.universe} at tick ${saved.tick}\nSave: ${saved.id}\nPath: ${saved.path}\nSHA-256: ${saved.checksum.value}\n`);
-      run.phase = "stopping-jobs"; this.append(run, "Stopping GUI-owned operator jobs...\n");
-      await this.requestJson("http://127.0.0.1:8787/api/operator/stop-all", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      run.phase = "stopping-services"; await this.stopService("frontend", run); await this.stopService("bridge-api", run);
-      await this.waitPort(5173, false); await this.waitPort(8787, false);
-      const resumePath = path.resolve(saved.path), resumeEnv = { ...process.env, PROTOUNIVERSE_RESUME_SAVE: resumePath, VITE_PROTOUNIVERSE_RESUME: "1" };
-      run.phase = "starting-services"; this.append(run, `Resuming ${saved.id}...\n`); this.spawnService("bridge-api", resumeEnv, run); await this.waitPort(8787, true);
-      this.spawnService("frontend", resumeEnv, run); await this.waitPort(5173, true); run.reloadReady = true; run.phase = "awaiting-browser";
-      this.append(run, "Frontend and Bridge/API healthy; browser reload requested\n");
-      for (let attempt = 0; attempt < 300; attempt++) { try { const status = await this.requestJson("http://127.0.0.1:8787/api/status");
-          if (status.connected && status.seed === saved.universe && status.runtime?.mode === "resumed" && status.runtime?.sourceSaveTick === saved.tick && status.currentTick >= saved.tick) {
-            run.status = "completed"; run.phase = "healthy"; run.finishedAt = new Date().toISOString(); this.append(run, `Runtime healthy\nUniverse ${saved.universe} resumed at tick ${status.currentTick}\nRestart complete\n`); return; }
-        } catch { /* Bridge may still be accepting the browser connection. */ } await this.dependencies.delay(200); }
-      throw new Error("Authoritative resumed browser runtime did not become healthy");
-    } catch (error) { run.status = "failed"; run.phase = "failed"; run.finishedAt = new Date().toISOString(); this.append(run, `[failed] ${error instanceof Error ? error.message : error}\n`); }
+  private async restartAll(run: ServiceRun): Promise<void> {
+    await this.replaceRuntime(run, { kind: "save-current" });
   }
-  private async resumeSelected(run: ServiceRun, saveId: string): Promise<void> { try {
-      run.phase = "validating"; const current = await this.requestJson("http://127.0.0.1:8787/api/status");
-      if (!current.connected || typeof current.seed !== "string") throw new Error("No authoritative universe is connected");
-      const artifact = await this.saveStates.load(saveId, current.seed), immutablePath = this.saveStates.file(current.seed, saveId);
-      run.save = { id: artifact.id, universe: artifact.universe, tick: artifact.tick, path: immutablePath, checksum: artifact.checksum.value };
-      this.append(run, `Validated ${artifact.id} for ${artifact.universe} at tick ${artifact.tick}\n`);
+  private async resumeSelected(run: ServiceRun, saveId: string): Promise<void> {
+    await this.replaceRuntime(run, { kind: "existing-save", saveId });
+  }
+  private async replaceRuntime(run: ServiceRun, source: { kind: "save-current" } | { kind: "existing-save"; saveId: string }): Promise<void> {
+    try {
+      let selected: { id: string; universe: string; tick: number; path: string; checksum: string };
+      if (source.kind === "save-current") {
+        run.phase = "saving"; this.append(run, "Saving current universe before restart...\n");
+        const saved = await this.requestJson("http://127.0.0.1:8787/api/save-state", { method: "POST" });
+        selected = { id: saved.id, universe: saved.universe, tick: saved.tick, path: path.resolve(saved.path), checksum: saved.checksum.value };
+        this.append(run, `Saved ${saved.universe} at tick ${saved.tick}\nSave: ${saved.id}\nPath: ${saved.path}\nSHA-256: ${saved.checksum.value}\n`);
+      } else {
+        run.phase = "validating";
+        const current = await this.requestJson("http://127.0.0.1:8787/api/status");
+        if (!current.connected || typeof current.seed !== "string") throw new Error("No authoritative universe is connected");
+        const artifact = await this.saveStates.load(source.saveId, current.seed);
+        selected = { id: artifact.id, universe: artifact.universe, tick: artifact.tick,
+          path: this.saveStates.file(current.seed, source.saveId), checksum: artifact.checksum.value };
+        this.append(run, `Validated ${artifact.id} for ${artifact.universe} at tick ${artifact.tick}\n`);
+      }
+      run.save = selected;
       run.phase = "stopping-jobs"; this.append(run, "Stopping GUI-owned operator jobs...\n");
       await this.requestJson("http://127.0.0.1:8787/api/operator/stop-all", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       run.phase = "stopping-services"; await this.stopService("frontend", run); await this.stopService("bridge-api", run);
       await this.waitPort(5173, false); await this.waitPort(8787, false);
-      const resumeEnv = { ...process.env, PROTOUNIVERSE_RESUME_SAVE: immutablePath, VITE_PROTOUNIVERSE_RESUME: "1" };
-      run.phase = "starting-services"; this.append(run, `Loading ${artifact.id}...\n`);
-      this.spawnService("bridge-api", resumeEnv, run); await this.waitPort(8787, true);
-      this.spawnService("frontend", resumeEnv, run); await this.waitPort(5173, true); run.reloadReady = true; run.phase = "awaiting-browser";
+      const resumeEnv = { ...process.env, PROTOUNIVERSE_RESUME_SAVE: selected.path, VITE_PROTOUNIVERSE_RESUME: "1" };
+      run.phase = "starting-services"; this.append(run, `${source.kind === "save-current" ? "Resuming" : "Loading"} ${selected.id}...\n`);
+      this.spawnService("bridge-api", resumeEnv, run); await this.waitServiceHealthy("bridge-api");
+      this.spawnService("frontend", resumeEnv, run); await this.waitServiceHealthy("frontend");
+      run.reloadReady = true; run.phase = "awaiting-browser";
       this.append(run, "Frontend and Bridge/API healthy; browser reload requested\n");
-      for (let attempt = 0; attempt < 300; attempt++) { try { const status = await this.requestJson("http://127.0.0.1:8787/api/status");
-          if (status.connected && status.seed === artifact.universe && status.runtime?.mode === "resumed"
-            && status.runtime?.sourceSaveId === artifact.id && status.runtime?.sourceSaveTick === artifact.tick && status.currentTick >= artifact.tick) {
+      for (let attempt = 0; attempt < 300; attempt++) {
+        try {
+          const status = await this.requestJson("http://127.0.0.1:8787/api/status");
+          const sourceMatches = source.kind === "save-current" || status.runtime?.sourceSaveId === selected.id;
+          if (status.connected && status.seed === selected.universe && status.runtime?.mode === "resumed"
+            && sourceMatches && status.runtime?.sourceSaveTick === selected.tick && status.currentTick >= selected.tick) {
             run.status = "completed"; run.phase = "healthy"; run.finishedAt = new Date().toISOString();
-            this.append(run, `Universe ${artifact.universe} resumed from tick ${artifact.tick}\nRuntime healthy\nResume complete\n`); return; }
-        } catch { /* Browser reconnect is expected to lag service health. */ } await this.dependencies.delay(200); }
-      throw new Error("Authoritative resumed browser runtime did not match the selected save");
-    } catch (error) { run.status = "failed"; run.phase = "failed"; run.finishedAt = new Date().toISOString();
-      this.append(run, `[failed] ${error instanceof Error ? error.message : error}\n`); }
+            this.append(run, source.kind === "save-current"
+              ? `Runtime healthy\nUniverse ${selected.universe} resumed at tick ${status.currentTick}\nRestart complete\n`
+              : `Universe ${selected.universe} resumed from tick ${selected.tick}\nRuntime healthy\nResume complete\n`);
+            return;
+          }
+        } catch { /* Browser reconnect is expected to lag service health. */ }
+        await this.dependencies.delay(200);
+      }
+      throw new Error(source.kind === "save-current"
+        ? "Authoritative resumed browser runtime did not become healthy"
+        : "Authoritative resumed browser runtime did not match the selected save");
+    } catch (error) {
+      run.status = "failed"; run.phase = "failed"; run.finishedAt = new Date().toISOString();
+      this.append(run, `[failed] ${error instanceof Error ? error.message : error}\n`);
+    }
   }
 }

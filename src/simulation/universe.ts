@@ -13,6 +13,8 @@ import { MAX_BASE_POPULATION, ReproductionSystem } from "./reproduction";
 import { OccurrenceLog } from "./occurrenceLog";
 import { RuptureSystem } from "./rupture";
 import { SAVE_STATE_SCHEMA_VERSION, validateContinuation, type RuntimeProvenance, type UniverseContinuationState } from "./saveState";
+import { orderedBonds, orderedRelationships } from "./deterministicOrdering";
+import { SimulationProfiler } from "./simulationProfiler";
 
 export const SIMULATION_VERSION = "u0.6";
 export const INITIAL_ENTITY_COUNT = 20;
@@ -32,6 +34,8 @@ export class Universe {
   readonly reproduction = new ReproductionSystem();
   readonly occurrences = new OccurrenceLog();
   readonly rupture = new RuptureSystem();
+  /** Observer-only rolling timings. Never serialized into authoritative state. */
+  readonly profiler = new SimulationProfiler();
   private readonly random: SeededRandom;
   readonly runtime: RuntimeProvenance;
   readonly state: WorldState = {
@@ -94,13 +98,17 @@ export class Universe {
   continuationState(): UniverseContinuationState {
     return structuredClone({ schemaVersion: SAVE_STATE_SCHEMA_VERSION, simulationVersion: SIMULATION_VERSION, universe: this.seed,
       tick: this.state.ticks, runtime: this.runtime, state: this.state, entities: this.entities,
-      bonds: [...this.bonds.entries()].sort(([a], [b]) => a.localeCompare(b)), relationships: [...this.relationshipLayer.entities.values()].sort((a, b) => a.id.localeCompare(b.id)),
+      bonds: orderedBonds(this.bonds), relationships: orderedRelationships(this.relationshipLayer.entities.values()),
       relationshipCandidates: this.relationshipLayer.continuationCandidates(), reproductionBirthTicks: this.reproduction.continuationState(),
       rupture: this.rupture.continuationState(), occurrences: this.occurrences.continuationState(), randomState: this.random.continuationState() });
   }
 
   step(dt = 1): void {
+    this.profiler.beginStep();
+    let phaseStarted = this.profiler.clock();
     stepPhysics(this.entities, this.spatial, this.bonds, this.state, dt);
+    this.profiler.record("base-physics", phaseStarted);
+    phaseStarted = this.profiler.clock();
     this.state.ticks++;
     this.state.simulationTime += dt;
     if (this.state.ticks % EXTERNAL_ARRIVAL_INTERVAL === 0
@@ -116,6 +124,8 @@ export class Universe {
         entityId: arrival.creationIndex, x: arrival.x, y: arrival.y,
       });
     }
+    this.profiler.record("clock-and-external-arrivals", phaseStarted);
+    phaseStarted = this.profiler.clock();
     const previousRelationships = new Map([...this.relationshipLayer.entities].map(([id, entity]) => [id, {
       entity, spatialActive: entity.spatialActive, influenceActive: entity.influenceActive,
     }]));
@@ -143,8 +153,14 @@ export class Universe {
         x: previous.entity.x, y: previous.entity.y,
       });
     }
+    this.profiler.record("relationship-lifecycle", phaseStarted);
+    phaseStarted = this.profiler.clock();
     this.dimensionalState.update(relationships);
+    this.profiler.record("dimensional-state", phaseStarted);
+    phaseStarted = this.profiler.clock();
     this.rupture.update(relationships, this.entities, this.bonds, this.state, this.occurrences);
+    this.profiler.record("rupture", phaseStarted);
+    phaseStarted = this.profiler.clock();
     for (const relationship of relationships) {
       const previous = previousRelationships.get(relationship.id);
       if (!previous) continue;
@@ -162,10 +178,20 @@ export class Universe {
         x: relationship.x, y: relationship.y,
       });
     }
+    this.profiler.record("dimensional-transition-events", phaseStarted);
+    phaseStarted = this.profiler.clock();
     this.influencePhysics.update(relationships);
+    this.profiler.record("influence-physics", phaseStarted);
+    phaseStarted = this.profiler.clock();
     this.relationshipField.update(relationships, this.entities, dt);
+    this.profiler.record("relationship-field", phaseStarted);
+    phaseStarted = this.profiler.clock();
     this.higherOrderPhysics.step(relationships, this.entities, this.influencePhysics.modulation, dt);
+    this.profiler.record("higher-order-physics", phaseStarted);
+    phaseStarted = this.profiler.clock();
     this.measure();
+    this.profiler.record("aggregate-measurement", phaseStarted);
+    phaseStarted = this.profiler.clock();
     const births = this.reproduction.update(this.entities, relationships, this.state);
     if (births.length) {
       this.entities.push(...births);
@@ -183,8 +209,15 @@ export class Universe {
           x: child.x, y: child.y,
         });
       }
+      this.profiler.record("reproduction", phaseStarted);
+      phaseStarted = this.profiler.clock();
       this.measure();
+      this.profiler.record("post-reproduction-measurement-if-needed", phaseStarted);
+    } else {
+      this.profiler.record("reproduction", phaseStarted);
+      this.profiler.record("post-reproduction-measurement-if-needed", this.profiler.clock());
     }
+    this.profiler.endStep();
   }
 
   private dimensionalTransition(

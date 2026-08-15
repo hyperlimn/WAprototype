@@ -65,7 +65,8 @@ test("restart-all saves first, stops only owned services, resumes that save, and
       children.set(child as unknown as ChildProcess, port); open.add(port); events.push(`spawn:${port}:${options.env.PROTOUNIVERSE_RESUME_SAVE ?? "fresh"}`); return child as unknown as ChildProcess; }) as typeof spawn,
     isPortOpen: async (port) => open.has(port),
     terminate: async (child) => { const port = children.get(child)!; events.push(`stop:${port}:${child.pid}`); open.delete(port); (child as unknown as FakeChild).exitCode = 0; (child as unknown as FakeChild).emit("exit", 0); },
-    request: async (url) => { events.push(`request:${url}`); if (url.endsWith("/api/save-state")) return response(save);
+    request: async (url) => { events.push(`request:${url}`); if (url.endsWith("/api/health")) return response({ service: "bridge-api", ready: true });
+      if (url.endsWith("/api/save-state")) return response(save);
       if (url.endsWith("/api/operator/stop-all")) return response({ stopped: ["owned-loop"] });
       return response({ connected: true, seed: save.universe, currentTick: save.tick + 1,
         runtime: { mode: "resumed", sourceSaveTick: save.tick } }); }, delay: async () => {},
@@ -83,20 +84,32 @@ test("restart-all saves first, stops only owned services, resumes that save, and
 test("failed save aborts restart before any owned PID is stopped", async () => {
   let stopped = 0; const open = new Set<number>();
   const dependencies: SupervisorDependencies = { spawn: ((_command, rawArgs) => { const args = rawArgs as readonly string[]; open.add(args.some((arg) => arg.endsWith("index.ts")) ? 8787 : 5173); return new FakeChild() as unknown as ChildProcess; }) as typeof spawn,
-    isPortOpen: async (port) => open.has(port), terminate: async () => { stopped++; }, delay: async () => {}, request: async () => response({ message: "save failed" }, false) };
+    isPortOpen: async (port) => open.has(port), terminate: async () => { stopped++; }, delay: async () => {},
+    request: async (url) => url.endsWith("/api/health") ? response({ service: "bridge-api", ready: true }) : url === "http://127.0.0.1:5173/" ? response({}) : response({ message: "save failed" }, false) };
   const supervisor = new ServiceSupervisor(process.cwd(), dependencies); await supervisor.startInitialStack(); const run = supervisor.beginRestartAll("runtime.restart-all");
   for (let attempt = 0; attempt < 20 && supervisor.list().find((item) => item.id === run.id)?.status === "running"; attempt++) await new Promise((resolve) => setImmediate(resolve));
   assert.equal(supervisor.list().find((item) => item.id === run.id)?.status, "failed"); assert.equal(stopped, 0);
 });
 
-test("initial managed stack requires both Bridge/API and frontend health", async () => {
+test("initial managed stack requires semantic Bridge/API health and frontend HTTP readiness", async () => {
   let spawnCount = 0;
   const dependencies: SupervisorDependencies = {
     spawn: (() => { spawnCount++; return new FakeChild() as unknown as ChildProcess; }) as typeof spawn,
     isPortOpen: async (port) => port === 8787 && spawnCount > 0,
-    request: async () => response({}), terminate: async () => {}, delay: async () => {},
+    request: async (url) => url.endsWith("/api/health") ? response({ service: "bridge-api", ready: true }) : response({}), terminate: async () => {}, delay: async () => {},
   };
-  await assert.rejects(() => new ServiceSupervisor(process.cwd(), dependencies).startInitialStack(), /Port 5173 did not become healthy/);
+  await assert.rejects(() => new ServiceSupervisor(process.cwd(), dependencies).startInitialStack(), /Frontend \/ Vite did not become application-ready/);
+});
+
+test("an open Bridge/API port without semantic readiness is rejected", async () => {
+  let spawned = false;
+  const dependencies: SupervisorDependencies = {
+    spawn: (() => { spawned = true; return new FakeChild() as unknown as ChildProcess; }) as typeof spawn,
+    isPortOpen: async () => spawned,
+    request: async () => response({ service: "bridge-api", ready: false }),
+    terminate: async () => {}, delay: async () => {},
+  };
+  await assert.rejects(() => new ServiceSupervisor(process.cwd(), dependencies).startInitialStack(), /Bridge \+ Operator API did not become application-ready/);
 });
 
 test("selected-save resume resolves an ID internally, preserves the artifact, and retains its log", async () => {
@@ -111,7 +124,8 @@ test("selected-save resume resolves an ID internally, preserves the artifact, an
       if (options.env.PROTOUNIVERSE_RESUME_SAVE) resumeStarted = true; children.set(child as unknown as ChildProcess, port); open.add(port); events.push(`spawn:${port}`); return child as unknown as ChildProcess; }) as typeof spawn,
     isPortOpen: async (port) => open.has(port), delay: async () => {},
     terminate: async (child) => { const port = children.get(child)!; events.push(`stop:${port}:${child.pid}`); open.delete(port); (child as unknown as FakeChild).exitCode = 0; (child as unknown as FakeChild).emit("exit", 0); },
-    request: async (url) => { if (url.endsWith("/api/operator/stop-all")) return response({ stopped: [] });
+    request: async (url) => { if (url.endsWith("/api/health")) return response({ service: "bridge-api", ready: true });
+      if (url.endsWith("/api/operator/stop-all")) return response({ stopped: [] });
       return response(resumeStarted ? { connected: true, seed: artifact.universe, currentTick: 322,
         runtime: { mode: "resumed", sourceSaveId: artifact.id, sourceSaveTick: artifact.tick } } : { connected: true, seed: artifact.universe, currentTick: 900, runtime: { mode: "fresh" } }); },
   };

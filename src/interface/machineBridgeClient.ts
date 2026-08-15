@@ -10,6 +10,7 @@ export interface MachineBridgeStatus {
   connected: boolean;
   lastPublishAt: number | null;
   lastSnapshotDurationMs: number | null;
+  lastSnapshotBytes: number | null;
 }
 
 export function startMachineBridgeClient(
@@ -23,7 +24,7 @@ export function startMachineBridgeClient(
   let occurrenceTimer = 0;
   let stopped = false;
   let lastSequence = -1;
-  const status: MachineBridgeStatus = { connected: false, lastPublishAt: null, lastSnapshotDurationMs: null };
+  const status: MachineBridgeStatus = { connected: false, lastPublishAt: null, lastSnapshotDurationMs: null, lastSnapshotBytes: null };
   const report = () => onStatus({ ...status });
   const send = (message: object): boolean => {
     if (socket?.readyState !== WebSocket.OPEN) return false;
@@ -42,8 +43,17 @@ export function startMachineBridgeClient(
     const started = performance.now();
     const value = buildWorldSnapshot(getUniverse());
     status.lastSnapshotDurationMs = performance.now() - started;
+    status.lastSnapshotBytes = new TextEncoder().encode(JSON.stringify(value)).byteLength;
+    const universe = getUniverse();
     send({ type: "snapshot", interfaceVersion: MACHINE_INTERFACE_VERSION, snapshot: value,
-      serializationDurationMs: status.lastSnapshotDurationMs });
+      observationMetrics: {
+        buildDurationMs: status.lastSnapshotDurationMs,
+        serializedBytes: status.lastSnapshotBytes,
+        entityCount: value.entities.length,
+        relationshipCount: value.relationships.length,
+      },
+      simulationTimings: universe.profiler.snapshot(),
+    });
   };
   const occurrences = () => {
     const allRecords = getUniverse().occurrences.records;

@@ -8,6 +8,8 @@ export class StateStore {
   snapshot: CanonicalSnapshot | null = null;
   lastBrowserUpdateAt: number | null = null;
   lastSnapshotDurationMs: number | null = null;
+  lastObservationMetrics: { buildDurationMs: number; serializedBytes: number; entityCount: number; relationshipCount: number } | null = null;
+  lastSimulationTimings: unknown = null;
   readonly events: OccurrenceRecord[] = [];
   entityById = new Map<number, EntityRecord>();
   relationshipById = new Map<string, RelationshipRecord>();
@@ -17,7 +19,7 @@ export class StateStore {
     this.heartbeat = value;
     this.lastBrowserUpdateAt = Date.now();
   }
-  updateSnapshot(value: CanonicalSnapshot, durationMs?: number): void {
+  updateSnapshot(value: CanonicalSnapshot, metrics?: { buildDurationMs: number; serializedBytes: number; entityCount: number; relationshipCount: number }, simulationTimings?: unknown): void {
     const previousTick = this.snapshot?.metadata.currentTick;
     if (typeof previousTick === "number" && typeof value.metadata.currentTick === "number" && value.metadata.currentTick < previousTick) {
       this.events.length = 0;
@@ -33,7 +35,9 @@ export class StateStore {
         this.relationshipsByParent.set(parentId, items);
       }
     }
-    this.lastSnapshotDurationMs = typeof durationMs === "number" ? durationMs : null;
+    this.lastObservationMetrics = metrics ?? null;
+    this.lastSimulationTimings = simulationTimings ?? null;
+    this.lastSnapshotDurationMs = metrics?.buildDurationMs ?? null;
     this.lastBrowserUpdateAt = Date.now();
     this.addEvents(value.recentOccurrences ?? []);
   }
