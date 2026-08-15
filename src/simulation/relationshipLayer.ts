@@ -17,6 +17,13 @@ export class RelationshipLayer {
     return this.candidateSince.get(id);
   }
 
+  continuationCandidates(): [string, number][] { return [...this.candidateSince.entries()].sort(([a], [b]) => a.localeCompare(b)); }
+  restoreContinuation(relationships: RelationshipEntity[], candidates: [string, number][]): void {
+    this.entities.clear(); this.candidateSince.clear();
+    for (const relationship of relationships) this.entities.set(relationship.id, relationship);
+    for (const [id, tick] of candidates) this.candidateSince.set(id, tick);
+  }
+
   update(baseEntities: Entity[], bonds: Map<string, Bond>, tick: number): void {
     for (const [id, bond] of bonds) {
       if (this.entities.has(id)) continue;

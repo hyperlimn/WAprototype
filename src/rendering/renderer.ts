@@ -4,6 +4,8 @@ import type { Universe } from "../simulation/universe";
 import { Camera } from "./camera";
 import type { RelationshipEntity } from "../simulation/relationshipEntity";
 import { EVENT_TRACE_DURATION_TICKS, type Occurrence } from "../simulation/occurrenceLog";
+import { baseRelationOpacity, higherOrderOpacity, projectEntity, projectRelationship, type DimensionMode } from "./dimensionProjection";
+import { oscillationAtTick } from "../simulation/oscillation";
 
 export class Renderer {
   private context: CanvasRenderingContext2D;
@@ -19,6 +21,7 @@ export class Renderer {
   showReproductionEntities = true;
   showRelationshipEvents = true;
   showDimensionalTransitions = true;
+  dimension: DimensionMode = "composite";
 
   constructor(readonly canvas: HTMLCanvasElement, readonly camera: Camera) {
     const context = canvas.getContext("2d");
@@ -65,7 +68,7 @@ export class Renderer {
       for (const interaction of universe.higherOrderPhysics.activeInteractions) {
         const [ax, ay] = this.camera.worldToScreen(interaction.a.x, interaction.a.y, width, height);
         const [bx, by] = this.camera.worldToScreen(interaction.b.x, interaction.b.y, width, height);
-        ctx.strokeStyle = "rgba(194, 217, 204, 0.035)";
+        ctx.strokeStyle = `rgba(194, 217, 204, ${0.035 * higherOrderOpacity(this.dimension)})`;
         ctx.beginPath();
         ctx.moveTo(ax, ay);
         ctx.lineTo(bx, by);
@@ -84,7 +87,7 @@ export class Renderer {
         const [ax, ay] = this.camera.worldToScreen(a.x, a.y, width, height);
         const [bx, by] = this.camera.worldToScreen(b.x, b.y, width, height);
         if ((ax < 0 && bx < 0) || (ay < 0 && by < 0) || (ax > width && bx > width) || (ay > height && by > height)) continue;
-        ctx.strokeStyle = `rgba(117, 192, 195, ${Math.min(0.2, (relation - this.relationFilter) * 0.6 + 0.025)})`;
+        ctx.strokeStyle = `rgba(117, 192, 195, ${Math.min(0.2, (relation - this.relationFilter) * 0.6 + 0.025) * baseRelationOpacity(this.dimension)})`;
         ctx.beginPath();
         ctx.moveTo(ax, ay);
         ctx.lineTo(bx, by);
@@ -92,13 +95,17 @@ export class Renderer {
       }
     }
 
+    if (this.dimension !== "composite") this.drawProjectedRelationships(universe, width, height);
+    const lineageEntities = this.dimension === "lineage" ? this.drawLineage(universe, width, height) : new Set<number>();
+
     for (const entity of universe.entities) {
       if (!this.entityVisible(entity)) continue;
       const [x, y] = this.camera.worldToScreen(entity.x, entity.y, width, height);
       if (x < -10 || y < -10 || x > width + 10 || y > height + 10) continue;
-      const radius = Math.max(1.1, Math.min(3.5, 1.5 * Math.sqrt(this.camera.zoom)));
-      const light = 58 + entity.gamma * 18;
-      ctx.fillStyle = `hsla(${178 + entity.alpha * 36}, ${28 + entity.beta * 24}%, ${light}%, 0.9)`;
+      const visual = projectEntity(this.dimension, { alpha: entity.alpha, beta: entity.beta, gamma: entity.gamma,
+        currentOscillation: oscillationAtTick(entity, universe.state.ticks), participatesInLineage: lineageEntities.has(entity.creationIndex) });
+      const radius = Math.max(1.1, Math.min(3.5, 1.5 * Math.sqrt(this.camera.zoom))) * visual.radiusScale;
+      ctx.fillStyle = `hsla(${visual.hue}, ${visual.saturation}%, ${visual.lightness}%, ${visual.opacity})`;
       ctx.beginPath();
       ctx.arc(x, y, radius, 0, Math.PI * 2);
       ctx.fill();
@@ -126,7 +133,7 @@ export class Renderer {
       }
     }
 
-    if (this.showSpatialRelationshipLayer) {
+    if (this.dimension === "composite" && this.showSpatialRelationshipLayer) {
       for (const entity of universe.relationshipLayer.entities.values()) {
         if (!entity.spatialActive) continue;
         const [x, y] = this.camera.worldToScreen(entity.x, entity.y, width, height);
@@ -140,7 +147,7 @@ export class Renderer {
         }
       }
     }
-    if (this.showInfluenceLayer) {
+    if (this.dimension === "composite" && this.showInfluenceLayer) {
       for (const entity of universe.relationshipLayer.entities.values()) {
         if (!entity.influenceActive || entity.spatialActive) continue;
         const [x, y] = this.camera.worldToScreen(entity.x, entity.y, width, height);
@@ -156,7 +163,7 @@ export class Renderer {
         }
       }
     }
-    if (this.observationMode && this.showRelationshipEvents) {
+    if (this.dimension === "composite" && this.observationMode && this.showRelationshipEvents) {
       for (const entity of universe.relationshipLayer.entities.values()) {
         if (entity.spatialActive || entity.influenceActive) continue;
         const [x, y] = this.camera.worldToScreen(entity.x, entity.y, width, height);
@@ -173,7 +180,47 @@ export class Renderer {
         }
       }
     }
-    if (this.observationMode) this.drawOccurrenceTraces(universe, width, height);
+    if (this.observationMode && this.dimension === "composite") this.drawOccurrenceTraces(universe, width, height);
+  }
+
+  private drawProjectedRelationships(universe: Universe, width: number, height: number): void {
+    const ctx = this.context;
+    for (const relationship of universe.relationshipLayer.entities.values()) {
+      const projection = projectRelationship(this.dimension, relationship);
+      if (!projection.visible) continue;
+      const a = universe.entities[relationship.parentAId], b = universe.entities[relationship.parentBId];
+      if (!a || !b) continue;
+      const [ax, ay] = this.camera.worldToScreen(a.x, a.y, width, height);
+      const [bx, by] = this.camera.worldToScreen(b.x, b.y, width, height);
+      const [r, g, blue] = projection.color;
+      ctx.strokeStyle = `rgba(${r}, ${g}, ${blue}, ${projection.alpha})`;
+      ctx.lineWidth = projection.lineWidth;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      const [x, y] = this.camera.worldToScreen(relationship.x, relationship.y, width, height);
+      ctx.fillStyle = `rgba(${r}, ${g}, ${blue}, ${Math.min(.82, projection.alpha + .14)})`;
+      ctx.beginPath(); ctx.arc(x, y, projection.lineWidth + 1.2, 0, Math.PI * 2); ctx.fill();
+      if (relationship === this.selectedRelationship) {
+        ctx.strokeStyle = "#f5d987"; ctx.lineWidth = 1; ctx.strokeRect(x - 5, y - 5, 10, 10);
+      }
+    }
+  }
+
+  private drawLineage(universe: Universe, width: number, height: number): Set<number> {
+    const ctx = this.context, participants = new Set<number>();
+    ctx.strokeStyle = "rgba(215, 191, 125, 0.58)"; ctx.lineWidth = 1;
+    for (const child of universe.entities) {
+      if (!child.parentEntityIds) continue;
+      const [cx, cy] = this.camera.worldToScreen(child.x, child.y, width, height);
+      participants.add(child.creationIndex);
+      for (const parentId of child.parentEntityIds) {
+        const parent = universe.entities[parentId];
+        if (!parent) continue;
+        participants.add(parentId);
+        const [px, py] = this.camera.worldToScreen(parent.x, parent.y, width, height);
+        ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(cx, cy); ctx.stroke();
+      }
+    }
+    return participants;
   }
 
   private entityVisible(entity: Entity): boolean {
@@ -260,9 +307,10 @@ export class Renderer {
     let closest: RelationshipEntity | null = null;
     let best = 8 / this.camera.zoom;
     for (const entity of universe.relationshipLayer.entities.values()) {
-      const visible = (entity.spatialActive && this.showSpatialRelationshipLayer)
+      const visible = this.dimension === "composite" ? (entity.spatialActive && this.showSpatialRelationshipLayer)
         || (!entity.spatialActive && entity.influenceActive && this.showInfluenceLayer)
-        || (this.observationMode && this.showRelationshipEvents && !entity.spatialActive && !entity.influenceActive);
+        || (this.observationMode && this.showRelationshipEvents && !entity.spatialActive && !entity.influenceActive)
+        : projectRelationship(this.dimension, entity).visible;
       if (!visible) continue;
       const distance = Math.hypot(entity.x - wx, entity.y - wy);
       if (distance < best) {

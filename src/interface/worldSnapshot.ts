@@ -7,8 +7,9 @@ import { buildRelationshipFormationDiagnostics } from "../ui/relationshipDiagnos
 import { ruptureParameters } from "../simulation/rupture";
 import { buildRuptureDiagnostics } from "../ui/ruptureDiagnostics";
 import { buildRuptureCascadeDiagnostics } from "../ui/ruptureCascadeDiagnostics";
+import { oscillationAtTick } from "../simulation/oscillation";
 
-export const EXPORT_SCHEMA_VERSION = "universe-0-simulation-log/4";
+export const EXPORT_SCHEMA_VERSION = "universe-0-simulation-log/5";
 
 type NumericSummary = { min: number | null; max: number | null; mean: number | null };
 
@@ -28,7 +29,7 @@ const summarize = <T>(items: readonly T[], select: (item: T) => number): Numeric
 const descending = <T>(select: (item: T) => number, tie: (a: T, b: T) => number) =>
   (a: T, b: T): number => select(b) - select(a) || tie(a, b);
 
-const entityRecord = (entity: Entity) => ({
+const entityRecord = (entity: Entity, tick: number) => ({
   creationIndex: entity.creationIndex,
   fingerprint: entity.fingerprint,
   origin: entity.origin,
@@ -36,6 +37,8 @@ const entityRecord = (entity: Entity) => ({
   parentRelationshipId: entity.parentRelationshipId,
   parentEntityIds: entity.parentEntityIds,
   alpha: number(entity.alpha), beta: number(entity.beta), gamma: number(entity.gamma),
+  naturalFrequency: number(entity.naturalFrequency), phase: number(entity.phase),
+  currentOscillation: number(oscillationAtTick(entity, tick)),
   x: number(entity.x), y: number(entity.y), vx: number(entity.vx), vy: number(entity.vy),
   energy: number(entity.energy), age: number(entity.age), neighborCount: entity.neighborCount,
   strongestRelationship: number(entity.strongestRelationship), strongestBond: number(entity.strongestBond),
@@ -145,6 +148,7 @@ export function buildWorldSnapshot(universe: Universe) {
       simulationTime: number(state.simulationTime),
       basePopulationCap: MAX_BASE_POPULATION,
       entityCount: entities.length,
+      runtime: universe.runtime,
     },
     population: {
       initialCount: state.initialEntities,
@@ -245,11 +249,11 @@ export function buildWorldSnapshot(universe: Universe) {
     },
     ruptureCascadeSummary: ruptureCascadeDiagnostics,
     recentOccurrences: recentOccurrences.map(occurrenceRecord),
-    sampledEntities: [...sampledEntityMap.values()].map(entityRecord),
+    sampledEntities: [...sampledEntityMap.values()].map((entity) => entityRecord(entity, state.ticks)),
     sampledRelationships: [...sampledRelationshipMap.values()].map(relationshipRecord),
     entities: entities.map((entity) => ({
       id: entity.creationIndex,
-      ...entityRecord(entity),
+      ...entityRecord(entity, state.ticks),
       currentRelationshipIds: relationshipIdsByEntity.get(entity.creationIndex) ?? [],
     })),
     relationships: relationships.map(relationshipRecord),

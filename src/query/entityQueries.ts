@@ -1,11 +1,13 @@
 import { currentTick, finite, type EntityQueryParams, type EntityRecord, type QueryIndexes, type QueryResponse, type QuerySnapshot } from "./queryTypes.js";
 
 export type CompactEntityRecord = Pick<EntityRecord, "id" | "fingerprint" | "origin" | "birthTick" | "age" | "x" | "y" |
-  "energy" | "neighborCount" | "strongestBond" | "strongestRelationship" | "currentRelationshipIds">;
+  "energy" | "neighborCount" | "strongestBond" | "strongestRelationship" | "currentRelationshipIds" |
+  "naturalFrequency" | "phase" | "currentOscillation">;
 
 const compact = (entity: EntityRecord): CompactEntityRecord => ({
   id: entity.id, fingerprint: entity.fingerprint, origin: entity.origin, birthTick: entity.birthTick,
   age: entity.age, x: entity.x, y: entity.y, energy: entity.energy, neighborCount: entity.neighborCount,
+  naturalFrequency: entity.naturalFrequency, phase: entity.phase, currentOscillation: entity.currentOscillation,
   strongestBond: entity.strongestBond, strongestRelationship: entity.strongestRelationship,
   currentRelationshipIds: entity.currentRelationshipIds,
 });

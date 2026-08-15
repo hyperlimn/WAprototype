@@ -2,13 +2,18 @@ import "./style.css";
 import { Camera } from "./rendering/camera";
 import { Renderer } from "./rendering/renderer";
 import { SIMULATION_VERSION, Universe } from "./simulation/universe";
+import type { SaveStateArtifact } from "./simulation/saveState";
 import { bindControls } from "./ui/controls";
 import { updateInspector, updateRelationshipInspector } from "./ui/inspector";
 import { updateInstruments } from "./ui/instruments";
 import { updateOccurrences } from "./ui/occurrences";
 import { copySimulationExport } from "./ui/simulationExport";
+import { bindCollapsiblePanels } from "./ui/collapsiblePanels";
+import { bindDimensionSelector } from "./ui/dimensionSelector";
+import { bindDimensionAutoCycle, type DimensionAutoCycle } from "./ui/dimensionAutoCycle";
 import { startMachineBridgeClient, type MachineBridgeStatus } from "./interface/machineBridgeClient";
 
+async function main(): Promise<void> {
 const canvas = document.querySelector<HTMLCanvasElement>("#universe")!;
 const instruments = document.querySelector<HTMLElement>("#instruments")!;
 const inspector = document.querySelector<HTMLElement>("#inspector")!;
@@ -19,12 +24,37 @@ const bridgeLastPublish = document.querySelector<HTMLElement>("#bridgeLastPublis
 const memoryMode = document.querySelector<HTMLElement>("#memoryMode")!;
 const memoryEvents = document.querySelector<HTMLElement>("#memoryEvents")!;
 const memoryLatest = document.querySelector<HTMLElement>("#memoryLatest")!;
+const simulationTicks = document.querySelector<HTMLElement>("#simulationTicks")!;
+bindCollapsiblePanels(document.querySelector<HTMLElement>(".sidebar")!);
 document.querySelector<HTMLElement>("#simulationVersion")!.textContent = SIMULATION_VERSION;
 const camera = new Camera();
 const renderer = new Renderer(canvas, camera);
+let autoCycle: DimensionAutoCycle | null = null;
+const dimensionSelector = bindDimensionSelector(document.querySelector<HTMLSelectElement>("#dimensionSelector")!,
+  (mode) => { renderer.dimension = mode; }, () => autoCycle?.manualSelection());
+autoCycle = bindDimensionAutoCycle(document.querySelector<HTMLElement>("#autoCycle")!, dimensionSelector);
 
 const seedFromUrl = new URLSearchParams(location.search).get("seed");
-let universe = new Universe(seedFromUrl || "U0-000001");
+async function loadRuntime(): Promise<Universe> {
+  const resumeRequired = (import.meta as ImportMeta & { env: Record<string, string | undefined> }).env.VITE_PROTOUNIVERSE_RESUME === "1"; let lastError: unknown;
+  for (let attempt = 0; attempt < (resumeRequired ? 40 : 1); attempt++) {
+    try {
+      const response = await fetch("http://127.0.0.1:8787/api/runtime/bootstrap");
+      if (!response.ok) throw new Error((await response.json() as { message?: string }).message ?? "Resume bootstrap failed");
+      const value = await response.json() as { mode: "fresh" | "resumed"; artifact?: SaveStateArtifact };
+      if (value.mode === "resumed" && value.artifact) {
+        const artifact = value.artifact, continuation = structuredClone(artifact.continuation);
+        continuation.runtime = { mode: "resumed", sourceSaveId: artifact.id, sourceSaveHash: artifact.checksum.value, sourceSaveTick: artifact.tick };
+        return new Universe(artifact.universe, continuation);
+      }
+      if (resumeRequired) throw new Error("Resume was requested but the bridge supplied no save-state");
+      break;
+    } catch (error) { lastError = error; if (resumeRequired) await new Promise((resolve) => setTimeout(resolve, 250)); }
+  }
+  if (resumeRequired) throw lastError instanceof Error ? lastError : new Error("Resume bootstrap unavailable");
+  return new Universe(seedFromUrl || "U0-000001");
+}
+let universe = await loadRuntime();
 let playing = true;
 let speed = 1;
 let tickCredit = 0;
@@ -39,6 +69,7 @@ function replaceUniverse(seed: string): void {
   renderer.selectedRelationship = null;
   updateInspector(inspector, null);
   updateInstruments(instruments, universe);
+  simulationTicks.textContent = universe.state.ticks.toLocaleString();
   updateOccurrences(occurrences, universe);
   const url = new URL(location.href);
   url.searchParams.set("seed", seed);
@@ -105,7 +136,7 @@ canvas.addEventListener("pointerup", (event) => {
         universe.entities[relationship.parentAId], universe.entities[relationship.parentBId],
       ]);
     } else {
-      updateInspector(inspector, renderer.pick(canvasX, canvasY, universe));
+      updateInspector(inspector, renderer.pick(canvasX, canvasY, universe), universe.state.ticks);
     }
   }
 });
@@ -169,8 +200,9 @@ function frame(now: number): void {
   instrumentTimer += elapsed;
   if (instrumentTimer > 150) {
     updateInstruments(instruments, universe);
+    simulationTicks.textContent = universe.state.ticks.toLocaleString();
     updateOccurrences(occurrences, universe);
-    if (renderer.selected) updateInspector(inspector, renderer.selected);
+    if (renderer.selected) updateInspector(inspector, renderer.selected, universe.state.ticks);
     else if (renderer.selectedRelationship && universe.relationshipLayer.entities.has(renderer.selectedRelationship.id)) {
       const relationship = renderer.selectedRelationship;
       updateRelationshipInspector(inspector, relationship, [
@@ -186,6 +218,7 @@ function frame(now: number): void {
 }
 
 updateInstruments(instruments, universe);
+simulationTicks.textContent = universe.state.ticks.toLocaleString();
 updateOccurrences(occurrences, universe);
 startMachineBridgeClient(() => universe, (status) => {
   bridgeStatus = status;
@@ -207,3 +240,9 @@ window.setInterval(async () => {
 }, 2_000);
 simulationPump();
 requestAnimationFrame(frame);
+}
+
+void main().catch((error) => {
+  console.error("ProtoUniverse failed to initialize", error);
+  document.body.dataset.runtimeError = error instanceof Error ? error.message : "Runtime initialization failed";
+});

@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "protouniverse-laboratory-experiment/1",
+  "id": "archaeology-004",
+  "revision": "archaeology-004/1",
+  "universe": "U0-000001",
+  "observer": "lab-archaeology-004-a",
+  "promptVersion": "deep-archaeology-clean-room/1",
+  "description": "Deep Archaeology clean room: present form and post-horizon dynamics without explicit or indirect historical inscriptions, followed by integrity-gated reveal and comparison.",
+  "scientificQuestion": "How much information about an inaccessible past is encoded in the present form of ProtoUniverse when explicit and indirect historical inscriptions are removed?",
+  "prompt": "You are an archaeologist studying ProtoUniverse.\n\nYour accessible historical record begins around tick 250000. The present universe may preserve structural evidence of developments before that horizon.\n\nExplore freely using your available observational faculties.\n\nYour task is to reconstruct as much as you reasonably can about the universe before the earliest accessible historical record.\n\nDistinguish carefully between direct observation, inference, speculation, and things that cannot presently be known.\n\nLook especially for information encoded in present structure, organization, relationships, geometry, dynamics, and ancestry.\n\nLook for multiple independent clues where possible.\n\nConstruct a tentative developmental history of the pre-horizon universe.\n\nFor every major hypothesis provide:\n- hypothesis\n- evidence\n- estimated timing or relative ordering if inferable\n- confidence\n- competing explanations\n- a concrete prediction about what earlier history would show if revealed\n\nDo not modify the universe.",
+  "profile": {
+    "version": "protouniverse-veil/3",
+    "history": { "enabled": true, "minimumAccessibleTick": 250000 },
+    "currentState": true,
+    "checkpoints": true,
+    "events": true,
+    "entities": true,
+    "relationships": true,
+    "ancestry": true,
+    "coordinates": true,
+    "energy": true,
+    "relationshipMetrics": true,
+    "regions": true,
+    "similarity": false,
+    "anomalyDetection": true,
+    "comparison": true,
+    "observerMemory": false,
+    "bookmarks": false,
+    "discloseExperimentalContext": false,
+    "historicalInscriptions": { "mode": "redact", "retainStructuralLineage": true },
+    "entityIdentifiers": "opaque",
+    "relationshipIdentifiers": "opaque",
+    "cleanRoomHistory": {
+      "eventIdentifiers": "opaque",
+      "paginationCursors": "opaque",
+      "redactCumulativeBookkeeping": true
+    }
+  },
+  "chamber": {
+    "version": "protouniverse-reveal-comparison-chamber/1",
+    "freeze": {
+      "artifactKind": "blind-reconstruction",
+      "outputSchemaVersion": "archaeological-reconstruction/1"
+    },
+    "reveal": {
+      "observer": "lab-archaeology-004-comparison",
+      "promptVersion": "deep-archaeology-clean-room-reveal/1",
+      "outputSchemaVersion": "archaeological-reveal-comparison/1",
+      "prompt": "A clean-room deep-archaeology reconstruction was completed and permanently frozen before this reveal. Retrieve it with frozen_reconstruction. Preserve every original claim and confidence exactly as written.\n\nYou now have read-only observational access to the authoritative historical interval from tick 0 through tick 249999. Systematically test every frozen hypothesis and prediction against authoritative evidence. Classify each as confirmed, partially supported, contradicted, unresolved, or not testable from available evidence. Do not silently reinterpret a claim to make it fit.\n\nFor every hypothesis report the original wording, confidence, evidence and reasoning; actual relevant evidence; classification and explanation; clues that preserved information in present form; misleading clues; and what could not reasonably have been inferred without historical records. Compare inferred and actual developmental chronology, including ordering, timing errors, missing developments, and inferred developments that did not occur. Finish by analyzing what information survived in form and structure and which developments left little or no recoverable present-day evidence. Do not use archaeology-002 or archaeology-003 results. Do not modify the universe.",
+      "profile": {
+        "version": "protouniverse-veil/3",
+        "history": { "enabled": true, "minimumAccessibleTick": 0 },
+        "currentState": true,
+        "checkpoints": true,
+        "events": true,
+        "entities": true,
+        "relationships": true,
+        "ancestry": true,
+        "coordinates": true,
+        "energy": true,
+        "relationshipMetrics": true,
+        "regions": true,
+        "similarity": true,
+        "anomalyDetection": true,
+        "comparison": true,
+        "observerMemory": false,
+        "bookmarks": false,
+        "discloseExperimentalContext": false,
+        "entityIdentifiers": "opaque",
+        "relationshipIdentifiers": "opaque",
+        "cleanRoomHistory": {
+          "eventIdentifiers": "opaque",
+          "paginationCursors": "opaque",
+          "redactCumulativeBookkeeping": true
+        }
+      }
+    }
+  }
+}

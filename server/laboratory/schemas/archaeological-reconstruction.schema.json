@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "observedRange", "inferredChronology", "hypotheses", "presentlyUnknowable"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "archaeological-reconstruction/1" },
+    "observedRange": {
+      "type": "object", "additionalProperties": false,
+      "required": ["entryTick", "accessibleHistoryStart", "latestObservedTick"],
+      "properties": {
+        "entryTick": { "type": ["integer", "null"] },
+        "accessibleHistoryStart": { "type": "integer" },
+        "latestObservedTick": { "type": ["integer", "null"] }
+      }
+    },
+    "inferredChronology": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["development", "estimatedTiming", "confidence", "basis"],
+        "properties": {
+          "development": { "type": "string" },
+          "estimatedTiming": { "type": ["string", "null"] },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "basis": { "type": "string" }
+        }
+      }
+    },
+    "hypotheses": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "hypothesis", "epistemicStatus", "evidence", "reasoning", "estimatedTiming", "confidence", "competingExplanations", "prediction"],
+        "properties": {
+          "id": { "type": "string" },
+          "hypothesis": { "type": "string" },
+          "epistemicStatus": { "type": "string", "enum": ["inference", "speculation"] },
+          "evidence": { "type": "array", "items": { "type": "string" } },
+          "reasoning": { "type": "string" },
+          "estimatedTiming": { "type": ["string", "null"] },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "competingExplanations": { "type": "array", "items": { "type": "string" } },
+          "prediction": { "type": "string" }
+        }
+      }
+    },
+    "presentlyUnknowable": { "type": "array", "items": { "type": "string" } }
+  }
+}

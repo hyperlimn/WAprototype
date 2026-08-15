@@ -1,6 +1,7 @@
 import { SeededRandom } from "./seededRandom";
+import { deriveIntrinsicOscillation, type IntrinsicOscillation } from "./oscillation";
 
-export interface FingerprintTraits {
+export interface FingerprintTraits extends IntrinsicOscillation {
   readonly fingerprint: string;
   readonly alpha: number;
   readonly beta: number;
@@ -16,6 +17,7 @@ export function decodeFingerprint(fingerprint: string): FingerprintTraits {
     alpha: normalizedSegment(fingerprint.slice(0, 4)),
     beta: normalizedSegment(fingerprint.slice(4, 8)),
     gamma: normalizedSegment(fingerprint.slice(8, 12)),
+    ...deriveIntrinsicOscillation(fingerprint),
   });
 }
 

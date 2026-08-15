@@ -163,6 +163,12 @@ The Occurrences panel retains the latest 200 deterministic lifecycle records in 
 
 ## Useful observations before changing the laws
 
+## Intrinsic oscillation
+
+Oscillation v1 gives every entity an intrinsic oscillator derived only from its existing 64-character fingerprint. Fingerprint slice `[12, 20)` (zero-based characters 12–19) is interpreted as an unsigned 32-bit integer `f`; `f / 0xffffffff` maps linearly to `naturalFrequency` in the inclusive range 0.25–2 cycles per 1,000 simulation ticks. Slice `[20, 28)` independently produces `p / 0xffffffff`, mapped to `phase` in the inclusive range 0–2π radians.
+
+At authoritative simulation tick `t`, `currentOscillation = sin(phase + 2π × naturalFrequency × t / 1000)`. It is an observation derived from identity and simulation time, not stored mutable state or wall-clock animation. Oscillation v1 is not read by physics, relationships, reproduction, rupture, or other entity interactions. The human Frequency projection only varies entity radius by ±11% and lightness by ±6 points while suppressing relationship clutter; it does not imply resonance or coupling.
+
 ## Machine interface
 
 The simulation is authoritative. Interfaces observe it.
@@ -278,6 +284,30 @@ Run the automated SDK client integration through `npm.cmd test`. To inspect inte
 npx.cmd @modelcontextprotocol/inspector npm.cmd run mcp
 ```
 
+### Human View
+
+The normal MCP exposes `human_view`, a read-only deterministic `rendered_view` of the current canonical snapshot. It returns an in-memory PNG plus universe, authoritative tick, dimension, and viewport metadata. Composite, Spatial, Influence, Lineage, and Frequency use the same projection and tick-derived oscillation policies as the browser renderer. Width, height, center, and either zoom or world radius define a deterministic camera; defaults frame the live population broadly.
+
+This is deliberately not `human_current_view`: it does not capture the user's browser, panels, selections, desktop, or current camera. A future literal browser-view faculty can use that distinct name. Laboratory profiles must opt in with `humanView: true`; omission is deny-by-default, so existing experiments do not gain a new observation channel.
+
+### Save-State / Resume
+
+Checkpoints are observational fossils; `protouniverse-save-state/1` artifacts are executable continuation points. While an authoritative browser runtime is connected, save its exact current state with:
+
+```powershell
+npm run universe:save
+```
+
+The bridge requests an atomic serialization from the browser between simulation ticks and writes it once beneath `data/universes/<universe>/save-states/`. The artifact includes entity, bond, relationship, lifecycle-timer, rolling-window, occurrence-sequence, world-counter, and PRNG continuation state plus a SHA-256 checksum. Derived oscillation values are not duplicated.
+
+After the existing authoritative runtime and bridge have been stopped normally, resume with:
+
+```powershell
+npm run universe:resume -- --save data/universes/<universe>/save-states/<save-id>.json
+```
+
+Resume validates schema, simulation version, identity, and checksum before starting the ordinary `npm run dev` runtime with the saved initialization path. It refuses if the default bridge reports another connected authoritative browser. The save artifact remains immutable. Runtime status and canonical snapshot metadata report `fresh` or the source save ID/hash/tick used for a resumed process.
+
 ### Recurring machine observer
 
 The local observer loop launches a fresh, non-interactive Codex expedition after each completed wait. It does not start, stop, or restart the app, bridge, universe, or MCP server. Start the app and bridge first (together with `npm run dev`, or separately in two terminals with `npm run dev:app` and `npm run dev:bridge`). The globally registered `protouniverse` MCP server is loaded by each Codex process.
@@ -328,6 +358,51 @@ npm run lab:once -- --experiment archaeology-001
 The runner uses Codex's `--ignore-user-config` boundary, registers only the experiment-specific lab MCP, disables shell/snapshot, apps, browser/computer-use, image/view, plugin/skill, agent, hook, and proxy features, omits web search, and uses read-only/no-approval sandbox settings as defense in depth. Codex's capability host remains enabled solely to route the explicitly configured MCP tools; its shell and unified-exec backends remain disabled. Codex starts in a newly created empty temporary directory; only the MCP subprocess receives the real repository as its private working directory. The stage is removed after exit. Transcripts and unscored operational metadata are written beneath `data/laboratory/runs/<experiment-id>/`; metadata includes experiment, observer, universe, profile, prompt and interface versions, entry tick when reachable, simulation version when reachable, timestamps, command, isolation claims, cleanup status, exit status, and timeout state.
 
 Manual classifications are separate sidecars beneath `data/laboratory/run-classifications/`, so scientific run transcripts and metadata remain unmodified. The original archaeology first-contact run is retained and classified as contaminated because it accessed backstage filesystem information.
+
+#### Reveal / Comparison Chamber
+
+The reusable chamber enforces `observe → hypothesize → freeze → reveal → compare`. A chamber-enabled blind run uses a versioned JSON output schema and captures the exact final response. After a successful run, the runner creates `data/laboratory/results/<experiment>/blind-reconstruction.json` with exclusive-create semantics, a SHA-256 over its complete frozen payload, source run/timestamps, observed tick/range, and experiment/profile/prompt/interface/simulation versions. It refuses to overwrite an existing artifact and marks it read-only. Results and run transcripts are experimental runtime records and remain outside authoritative history.
+
+`archaeology-002` uses fresh observer `lab-archaeology-002-a` under the same sealed isolation and tick-250000 horizon, but explicitly asks for a pre-horizon reconstruction with evidence, confidence, competing explanations, chronology, and testable predictions. Run and freeze Phase 1 with:
+
+```powershell
+npm run lab:once -- --experiment archaeology-002
+```
+
+Only after the frozen artifact exists and validates may the reveal be launched:
+
+```powershell
+npm run lab:reveal -- --experiment archaeology-002
+```
+
+Reveal refuses before starting Codex unless the frozen SHA-256, experiment revision, successful source-run metadata, and freeze-after-completion ordering validate. It uses a separate sealed observer, exposes the immutable reconstruction through `frozen_reconstruction`, and grants read-only observational access beginning at tick 0. Observer Memory and bookmarks remain unavailable. Schema-constrained comparison output must bind to the frozen hash and reproduce every hypothesis's wording, confidence, evidence, and prediction exactly; missing or altered claims are rejected. Each evaluation uses `confirmed`, `partially supported`, `contradicted`, `unresolved`, or `not testable from available evidence`, followed by timeline and archaeological-information-survival analyses. The write-once result is `data/laboratory/results/archaeology-002/reveal-comparison.json`.
+
+`archaeology-003` is Deep Archaeology: fresh observer `lab-archaeology-003-a` sees the accessible post-250000 record and present form--geometry, motion, energy, relationship topology and dimensional state, structural metrics, and undated lineage--through Veil profile v2. Explicit inscriptions such as birth/creation times, ages, provenance/origin, fingerprints, creation indices, reproduction counters, archive/checkpoint totals, and derived age/origin rankings are removed. Because authoritative numeric entity IDs are creation indices, both phases use stable experiment-scoped opaque entity labels; this preserves navigable topology and lets Reveal correlate evidence without exposing the underlying order. Similarity is unavailable because its candidate order currently mixes hidden age and origin with structural features; safe anomaly and comparison components remain available after field-level filtering. Its scientific question is: "How much information about an inaccessible past is encoded in the present form of ProtoUniverse when explicit historical inscriptions are removed?"
+
+```powershell
+npm run lab:once -- --experiment archaeology-003
+npm run lab:reveal -- --experiment archaeology-003
+```
+
+The same write-once Freeze / Reveal / Compare machinery stores archaeology-003 independently beneath `data/laboratory/results/archaeology-003/`. It never supplies archaeology-002 results to either archaeology-003 observer, leaving later cross-experiment analysis external to both scientific runs.
+
+`archaeology-003` is preserved as a scientifically valuable contaminated run: Veil v2 exposed authoritative event sequence 3950 at the horizon and accumulated rupture bookkeeping in the first accessible checkpoint. Its definition, run record, and frozen reconstruction are not rewritten or revealed.
+
+`archaeology-004` repeats Deep Archaeology in a Veil v3 clean room. In addition to v2 redactions, authoritative event sequences become stable opaque event labels, archive cursors become opaque session-local capabilities, relationship IDs that embed entity creation indices become stable opaque structural labels, and historical bookkeeping is removed systematically from checkpoints, catalogs, orientation, diagnostics, pagination, and resources. Current population and relationship counts remain visible because they describe present form; accumulated births, ruptures, formations, transitions, archive quantities, and hidden-history record positions do not.
+
+```powershell
+npm run lab:once -- --experiment archaeology-004
+npm run lab:reveal -- --experiment archaeology-004
+```
+
+`archaeology-005` is Present Moment archaeology under Veil v4. Its blind observer sees only current-form faculties: `orient`, present entity/relationship/region `inspect` and `context`, present-only `anomalies`, and present-target `compare`. History, changes, similarity, checkpoints, events, universe catalogs, Observer Memory, and bookmarks are absent. Current population, geometry, motion, energy, topology, dimensional states, relationship metrics, regional structure, and undated ancestry remain visible. Lifecycle counters, durations, prior-state values, provenance, historical rankings and summaries, archive metadata, and historical resource links are removed semantically. Entity and relationship references use deterministic experiment-scoped hash labels whose visible form does not preserve authoritative creation ordering.
+
+```powershell
+npm run lab:once -- --experiment archaeology-005
+npm run lab:reveal -- --experiment archaeology-005
+```
+
+The reveal command remains unavailable until the blind reconstruction has completed and been frozen by the existing write-once, hash-verified chamber. Archaeology-001 through archaeology-004 and their scientific artifacts remain separate and unchanged.
 
 Leakage controls remove pre-cutoff event/checkpoint objects and links plus obvious current-record historical fields such as birth/creation ticks, ages, origin, ancestry, historical summaries, archive start/count metadata, and age-derived feature labels. This is controlled epistemic access, not cryptographic secrecy: the present configuration may still permit qualitative inference from current population structure, identifiers/fingerprints, relationship topology, spatial arrangement, energy, and the ranking produced by permitted derived analyses. Future profiles can add sensory apertures, resolution lenses, blind comparison, prediction chambers, amnesiac or generational observers, communication chambers, event triggers, and counterfactual forks without changing authoritative domain logic.
 

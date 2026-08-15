@@ -109,6 +109,15 @@ test("constructs an isolated laboratory Codex command without an invalid normal-
   assert.ok(!command.args.includes("--search"));
 });
 
+test("constructs reveal chamber command with phase, schema, and exact-output capture", () => {
+  const command = buildLaboratoryCodexCommand({ id: "archaeology-002" }, "C:\\empty", "C:\\instrument", "win32",
+    { phase: "reveal", outputSchemaFile: "C:\\schema.json", lastMessageFile: "C:\\last.json" });
+  const mcpArgs = command.args.find((value) => value.startsWith("mcp_servers.protouniverse-lab.args="));
+  assert.match(mcpArgs, /archaeology-002/); assert.match(mcpArgs, /reveal/);
+  assert.equal(command.args[command.args.indexOf("--output-schema") + 1], "C:\\schema.json");
+  assert.equal(command.args[command.args.indexOf("--output-last-message") + 1], "C:\\last.json");
+});
+
 test("laboratory stage is empty, contains no backstage paths, and is removed", async () => {
   const stage = await createEmptyLaboratoryWorkspace();
   const forbidden = ["README.md", "package.json", "src", "server", "data", ".git", "archaeology-001.json"];

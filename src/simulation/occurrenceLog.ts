@@ -41,6 +41,11 @@ export class OccurrenceLog {
   readonly records: Occurrence[] = [];
   private sequence = 0;
 
+  continuationState(): { records: Occurrence[]; nextSequence: number } { return { records: structuredClone(this.records), nextSequence: this.sequence }; }
+  restoreContinuationState(value: { records: Occurrence[]; nextSequence: number }): void {
+    this.records.splice(0, this.records.length, ...structuredClone(value.records)); this.sequence = value.nextSequence;
+  }
+
   add(record: Omit<Occurrence, "sequence">): void {
     this.records.push({ ...record, sequence: this.sequence++ });
     if (this.records.length > MAX_OCCURRENCES) {

@@ -27,4 +27,10 @@ export class SeededRandom {
     while (value.length < length) value += Math.floor(this.next() * 0x100000000).toString(16).padStart(8, "0");
     return value.slice(0, length);
   }
+
+  continuationState(): number { return this.state >>> 0; }
+  restoreContinuationState(state: number): void {
+    if (!Number.isInteger(state) || state < 0 || state > 0xffffffff) throw new Error("Invalid PRNG continuation state");
+    this.state = state >>> 0;
+  }
 }

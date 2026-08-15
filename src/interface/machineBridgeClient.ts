@@ -35,7 +35,7 @@ export function startMachineBridgeClient(
   const heartbeat = () => {
     const universe = getUniverse();
     send({ type: "heartbeat", interfaceVersion: MACHINE_INTERFACE_VERSION, simulationVersion: SIMULATION_VERSION,
-      seed: universe.seed, currentTick: universe.state.ticks, entityCount: universe.entities.length });
+      seed: universe.seed, currentTick: universe.state.ticks, entityCount: universe.entities.length, runtime: universe.runtime });
   };
   const snapshot = () => {
     if (socket?.readyState !== WebSocket.OPEN) return;
@@ -62,6 +62,17 @@ export function startMachineBridgeClient(
       report();
       heartbeat();
       snapshot();
+    });
+    socket.addEventListener("message", (event) => {
+      try {
+        const message = JSON.parse(String(event.data)) as { type?: string; requestId?: string };
+        if (message.type !== "save-state-request" || !message.requestId) return;
+        const universe = getUniverse();
+        send({ type: "save-state-response", interfaceVersion: MACHINE_INTERFACE_VERSION, requestId: message.requestId,
+          continuation: universe.continuationState() });
+      } catch (error) {
+        // A malformed bridge control message cannot alter the universe.
+      }
     });
     socket.addEventListener("close", () => {
       status.connected = false;

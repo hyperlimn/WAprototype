@@ -5,6 +5,7 @@ import { findAnomalies } from "./anomalyDetection.js";
 import { findSimilarEntity, findSimilarRelationship } from "./similarity.js";
 import type { ObservedUniverse } from "./perceptionTypes.js";
 import { finiteValues, mean } from "./statistics.js";
+import { deriveIntrinsicOscillation, oscillationAtTick } from "../simulation/oscillation.js";
 
 const indexes = (snapshot: QuerySnapshot): QueryIndexes => {
   const entities = snapshot.entities ?? [], relationships = snapshot.relationships ?? [];
@@ -22,10 +23,16 @@ export function inspectTarget(observation: ObservedUniverse, target: InspectionT
   const index = indexes(snapshot), anomalies = findAnomalies(snapshot, undefined, 100);
   if (target.kind === "entity") {
     const entity = index.entityById.get(Number(target.id)); if (!entity) return null;
+    const intrinsic = typeof entity.naturalFrequency === "number" && typeof entity.phase === "number"
+      ? { naturalFrequency: entity.naturalFrequency, phase: entity.phase }
+      : /^[0-9a-f]{64}$/.test(entity.fingerprint) ? deriveIntrinsicOscillation(entity.fingerprint) : null;
+    const currentProperties = { ...entity,
+      naturalFrequency: intrinsic?.naturalFrequency ?? null, phase: intrinsic?.phase ?? null,
+      currentOscillation: intrinsic ? oscillationAtTick(intrinsic, observation.source.tick ?? snapshot.metadata.currentTick ?? 0) : null };
     const radius = 100 + depth * 100, neighbors = queryEntityNeighbors(snapshot, index, entity, { radius, limit: 10 * depth }, "perception-internal").results;
     const lineage = queryEntityLineage(snapshot, index, entity, depth, "perception-internal").results;
     return { target: { kind: "entity", id: entity.id }, summary: `${entity.origin} entity with ${entity.neighborCount} spatial neighbors and ${entity.currentRelationshipIds.length} relationships`,
-      currentProperties: entity, localContext: neighbors.nearbyEntities, connectedObjects: neighbors.connectedRelationships,
+      currentProperties, localContext: neighbors.nearbyEntities, connectedObjects: neighbors.connectedRelationships,
       lineage, anomalousTraits: anomalies.filter((item) => item.kind === "entity" && item.identifier === entity.id),
       similarObjects: findSimilarEntity(snapshot, entity, 5), suggestedNextInspections: neighbors.connectedRelationships.slice(0, 3).map((item) => ({ kind: "relationship", id: (item.relationship as RelationshipRecord).id })),
       explainability: { classification: "derived", method: "indexed neighborhood, recorded lineage, normalized similarity", baseline: "selected snapshot" } };

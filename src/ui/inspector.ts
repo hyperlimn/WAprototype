@@ -1,10 +1,11 @@
 import type { Entity } from "../simulation/entity";
 import type { RelationshipEntity } from "../simulation/relationshipEntity";
 import { ruptureParameters } from "../simulation/rupture";
+import { oscillationAtTick } from "../simulation/oscillation";
 
 const row = (label: string, value: string) => `<div><dt>${label}</dt><dd>${value}</dd></div>`;
 
-export function updateInspector(element: HTMLElement, entity: Entity | null): void {
+export function updateInspector(element: HTMLElement, entity: Entity | null, tick = 0): void {
   if (!entity) {
     element.innerHTML = `<h2>Entity inspector</h2><p class="empty">Select a point to inspect its immutable fingerprint and current state.</p>`;
     return;
@@ -15,6 +16,9 @@ export function updateInspector(element: HTMLElement, entity: Entity | null): vo
       row("alpha", entity.alpha.toFixed(6)),
       row("beta", entity.beta.toFixed(6)),
       row("gamma", entity.gamma.toFixed(6)),
+      row("Natural frequency", `${entity.naturalFrequency.toFixed(6)} cycles / 1k ticks`),
+      row("Phase", `${entity.phase.toFixed(6)} rad`),
+      row("Current oscillation", oscillationAtTick(entity, tick).toFixed(6)),
       row("Origin type", entity.origin === "external arrival" ? "external" : entity.origin),
       row("Birth tick", String(entity.birthTick)),
       row("Parent relationship", entity.parentRelationshipId ?? "none"),

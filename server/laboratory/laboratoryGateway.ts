@@ -9,15 +9,39 @@ export class LaboratoryGateway implements Gateway {
 
   async get(pathname: string, supplied: Record<string, unknown> = {}): Promise<any> {
     const params = { ...supplied }; this.policy.assertUniverse(params.seed ?? params.universe);
+    if (pathname === "/api/state") this.policy.assertFeature(this.experiment.profile.humanView === true, "Human View");
     if (pathname === "/api/universes") {
+      this.policy.assertFeature(this.experiment.profile.catalogs ?? true, "Universe catalogs");
       const result = await this.authoritative.get(pathname, params);
       return this.finish({ ...result, results: (result.results ?? []).filter((item: any) => item.seed === this.experiment.universe) });
     }
     if (pathname.startsWith("/api/universe/")) {
+      this.policy.assertFeature(this.experiment.profile.catalogs ?? true, "Universe catalogs");
       const requested = decodeURIComponent(pathname.slice("/api/universe/".length)); this.policy.assertUniverse(requested);
     } else params.seed = this.experiment.universe;
 
     const profile = this.experiment.profile, cutoff = this.policy.cutoff;
+    if (profile.entityIdentifiers === "opaque") {
+      if ((pathname === "/api/perception/inspect" || pathname === "/api/perception/context") && params.kind === "entity")
+        params.id = this.policy.resolveEntityId(params.id);
+      if (pathname === "/api/perception/compare" && params.kind === "entity") {
+        params.idA = this.policy.resolveEntityId(params.idA); params.idB = this.policy.resolveEntityId(params.idB);
+      }
+      if (pathname === "/api/history" && params.entityId !== undefined) params.entityId = this.policy.resolveEntityId(params.entityId);
+    }
+    if (profile.relationshipIdentifiers === "opaque") {
+      if ((pathname === "/api/perception/inspect" || pathname === "/api/perception/context") && params.kind === "relationship")
+        params.id = this.policy.resolveRelationshipId(params.id);
+      if (pathname === "/api/perception/compare" && params.kind === "relationship") {
+        params.idA = this.policy.resolveRelationshipId(params.idA); params.idB = this.policy.resolveRelationshipId(params.idB);
+      }
+      if (pathname === "/api/history" && params.relationshipId !== undefined) params.relationshipId = this.policy.resolveRelationshipId(params.relationshipId);
+    }
+    if (profile.cleanRoomHistory) {
+      if ((pathname === "/api/perception/inspect" || pathname === "/api/perception/context") && params.kind === "event")
+        params.sequence = this.policy.resolveEventId(params.sequence);
+      if (pathname === "/api/history" && params.cursor !== undefined) params.cursor = this.policy.resolveCursor(params.cursor);
+    }
     if (pathname === "/api/perception/orient") {
       this.policy.assertFeature(profile.currentState, "Current state"); delete params.observer;
     } else if (pathname === "/api/history") {
@@ -37,20 +61,24 @@ export class LaboratoryGateway implements Gateway {
       const match = pathname.match(/\/api\/checkpoint\/(?:nearest\/)?(\d+)$/); if (match) this.policy.assertTick(Number(match[1]), "Checkpoints");
     } else if (pathname === "/api/perception/inspect" || pathname === "/api/perception/context") {
       const kind = String(params.kind ?? "");
+      if (profile.presentMoment && !["entity", "relationship", "region"].includes(kind)) this.policy.assertFeature(false, "Historical targets");
       this.policy.assertFeature(kind === "entity" ? profile.entities : kind === "relationship" ? profile.relationships : kind === "region" ? profile.regions : kind === "checkpoint" ? profile.checkpoints : profile.events, kind || "Target");
       if (kind === "event" || kind === "checkpoint" || params.tick !== undefined) this.policy.assertTick(params.tick, kind === "checkpoint" ? "Checkpoints" : "Historical data");
     } else if (pathname === "/api/perception/anomalies") this.policy.assertFeature(profile.anomalyDetection, "Anomaly detection");
     else if (pathname === "/api/perception/similar") this.policy.assertFeature(profile.similarity, "Similarity analysis");
     else if (pathname === "/api/perception/compare") {
       this.policy.assertFeature(profile.comparison, "Comparison"); this.policy.assertUniverse(params.compareSeed);
+      if (profile.presentMoment && !["entity", "relationship", "region"].includes(String(params.kind))) this.policy.assertFeature(false, "Historical comparison");
       this.policy.assertTick(params.tickA, "Checkpoint comparison"); this.policy.assertTick(params.tickB, "Checkpoint comparison");
     } else if (pathname === "/api/perception/changes") {
-      this.policy.assertFeature(profile.comparison, "Change detection"); this.policy.assertUniverse(params.compareSeed);
+      this.policy.assertFeature(profile.changes ?? profile.comparison, "Change detection"); this.policy.assertUniverse(params.compareSeed);
       this.policy.assertTick(params.sinceTick ?? params.checkpoint ?? params.tick, "Change comparisons");
     } else if (pathname === "/api/perception/since-last") this.policy.assertFeature(profile.bookmarks, "Observer bookmarks");
     else if (pathname === "/api/observer-memory") this.policy.assertFeature(profile.observerMemory, "Observer Memory");
 
     const result = await this.authoritative.get(pathname, params);
+    if (profile.presentMoment && result?.source?.mode && result.source.mode !== "live")
+      throw new VeilAccessError("A present live observation is unavailable.");
     if (pathname.includes("checkpoint")) {
       const tick = result?.checkpoint?.tick ?? result?.metadata?.tick; this.policy.assertTick(tick, "Checkpoints");
     }

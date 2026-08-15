@@ -12,6 +12,7 @@ import { RelationshipField } from "./relationshipField";
 import { MAX_BASE_POPULATION, ReproductionSystem } from "./reproduction";
 import { OccurrenceLog } from "./occurrenceLog";
 import { RuptureSystem } from "./rupture";
+import { SAVE_STATE_SCHEMA_VERSION, validateContinuation, type RuntimeProvenance, type UniverseContinuationState } from "./saveState";
 
 export const SIMULATION_VERSION = "u0.6";
 export const INITIAL_ENTITY_COUNT = 20;
@@ -32,6 +33,7 @@ export class Universe {
   readonly occurrences = new OccurrenceLog();
   readonly rupture = new RuptureSystem();
   private readonly random: SeededRandom;
+  readonly runtime: RuntimeProvenance;
   readonly state: WorldState = {
     worldAlpha: 0,
     worldBeta: 0,
@@ -72,10 +74,29 @@ export class Universe {
     simulationTime: 0,
   };
 
-  constructor(readonly seed: string) {
+  constructor(readonly seed: string, saved?: UniverseContinuationState) {
     this.random = new SeededRandom(`${SIMULATION_VERSION}:${seed}`);
-    for (let i = 0; i < INITIAL_ENTITY_COUNT; i++) this.entities.push(this.createIntroducedEntity("initial", 0));
-    this.measure();
+    if (saved) {
+      const value = validateContinuation(saved, SIMULATION_VERSION); if (value.universe !== seed) throw new Error("Save universe identity does not match requested universe");
+      Object.assign(this.state, structuredClone(value.state)); this.entities.push(...structuredClone(value.entities));
+      for (const [id, bond] of value.bonds) this.bonds.set(id, structuredClone(bond));
+      this.relationshipLayer.restoreContinuation(structuredClone(value.relationships), structuredClone(value.relationshipCandidates));
+      this.reproduction.restoreContinuationState(value.reproductionBirthTicks); this.rupture.restoreContinuationState(value.rupture);
+      this.occurrences.restoreContinuationState(value.occurrences); this.random.restoreContinuationState(value.randomState);
+      this.runtime = structuredClone(value.runtime);
+    } else {
+      this.runtime = { mode: "fresh", sourceSaveId: null, sourceSaveHash: null, sourceSaveTick: null };
+      for (let i = 0; i < INITIAL_ENTITY_COUNT; i++) this.entities.push(this.createIntroducedEntity("initial", 0));
+      this.measure();
+    }
+  }
+
+  continuationState(): UniverseContinuationState {
+    return structuredClone({ schemaVersion: SAVE_STATE_SCHEMA_VERSION, simulationVersion: SIMULATION_VERSION, universe: this.seed,
+      tick: this.state.ticks, runtime: this.runtime, state: this.state, entities: this.entities,
+      bonds: [...this.bonds.entries()].sort(([a], [b]) => a.localeCompare(b)), relationships: [...this.relationshipLayer.entities.values()].sort((a, b) => a.id.localeCompare(b.id)),
+      relationshipCandidates: this.relationshipLayer.continuationCandidates(), reproductionBirthTicks: this.reproduction.continuationState(),
+      rupture: this.rupture.continuationState(), occurrences: this.occurrences.continuationState(), randomState: this.random.continuationState() });
   }
 
   step(dt = 1): void {

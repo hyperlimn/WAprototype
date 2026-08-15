@@ -1,4 +1,5 @@
 import type { EntityRecord, OccurrenceRecord, QuerySnapshot, RelationshipRecord } from "../src/query/queryTypes.js";
+import type { RuntimeProvenance } from "../src/simulation/saveState.js";
 
 export const INTERFACE_VERSION = "protouniverse-machine-interface/5";
 
@@ -8,6 +9,7 @@ export interface Heartbeat {
   seed: string;
   currentTick: number;
   entityCount: number;
+  runtime?: RuntimeProvenance;
 }
 
 export interface CanonicalSnapshot extends QuerySnapshot {

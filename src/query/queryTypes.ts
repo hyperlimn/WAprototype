@@ -5,6 +5,7 @@ export interface EntityRecord {
   id: number; creationIndex: number; fingerprint: string; origin: string; birthTick: number;
   parentRelationshipId: string | null; parentEntityIds: readonly [number, number] | null;
   alpha: number | null; beta: number | null; gamma: number | null;
+  naturalFrequency?: number | null; phase?: number | null; currentOscillation?: number | null;
   x: number | null; y: number | null; vx: number | null; vy: number | null;
   energy: number | null; age: number | null; neighborCount: number;
   strongestRelationship: number | null; strongestBond: number | null; currentRelationshipIds: string[];

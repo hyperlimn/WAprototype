@@ -10,9 +10,12 @@
     "mcp": "tsx server/mcp/index.ts",
     "lab:mcp": "tsx server/laboratory/mcpIndex.ts",
     "lab:once": "tsx scripts/lab-once.mjs",
+    "lab:reveal": "tsx scripts/lab-reveal.mjs",
     "observer:loop": "node scripts/observer-loop.mjs",
     "observer:once": "node scripts/observer-loop.mjs --once",
-    "test": "tsc -p tsconfig.test.json && node .test-dist/tests/memory.test.js && node .test-dist/tests/observerMemory.test.js && node .test-dist/tests/mcp.integration.test.js && node .test-dist/tests/laboratory.test.js && node tests/observerLoop.test.mjs && node scripts/clean-test-build.mjs",
+    "universe:save": "node scripts/universe-save.mjs",
+    "universe:resume": "tsx scripts/universe-resume.mjs",
+    "test": "tsc -p tsconfig.test.json && node .test-dist/tests/memory.test.js && node .test-dist/tests/observerMemory.test.js && node .test-dist/tests/mcp.integration.test.js && node .test-dist/tests/laboratory.test.js && node .test-dist/tests/dimensionProjection.test.js && node .test-dist/tests/dimensionAutoCycle.test.js && node .test-dist/tests/oscillation.test.js && node .test-dist/tests/humanView.test.js && tsx tests/saveState.test.ts && node tests/observerLoop.test.mjs && node scripts/clean-test-build.mjs",
     "build": "tsc && tsc -p tsconfig.server.json && vite build",
     "preview": "vite preview"
   },

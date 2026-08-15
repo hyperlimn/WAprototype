@@ -15,6 +15,10 @@ import { handleMarkObserved, handlePerceptionRoute } from "./perception/percepti
 import { ObserverMemoryStore, ObserverMemoryNotFoundError } from "./observer-memory/observerMemoryStore.js";
 import { handleObserverMemoryRoute } from "./observer-memory/observerMemoryRoutes.js";
 import { ObserverMemoryValidationError } from "./observer-memory/observerMemoryValidation.js";
+import { randomUUID } from "node:crypto";
+import type { Duplex } from "node:stream";
+import { SaveStateStore } from "./save-state/saveStateStore.js";
+import type { UniverseContinuationState } from "../src/simulation/saveState.js";
 
 const HOST = process.env.PROTOUNIVERSE_BRIDGE_HOST ?? "127.0.0.1";
 const PORT = Number(process.env.PROTOUNIVERSE_BRIDGE_PORT ?? 8787);
@@ -23,6 +27,15 @@ const memory = new MemoryStore(path.resolve(process.env.PROTOUNIVERSE_MEMORY_ROO
 const observerMemory = new ObserverMemoryStore(path.join(memory.root, "observer-memory"));
 const perception = new PerceptionService(store, memory, observerMemory);
 let browserConnected = false;
+let browserSocket: Duplex | null = null;
+const saveStates = new SaveStateStore();
+const pendingSaves = new Map<string, { resolve(value: UniverseContinuationState): void; reject(error: Error): void }>();
+const websocketText = (socket: Duplex, value: unknown): void => {
+  const payload = Buffer.from(JSON.stringify(value)), prefix = payload.length < 126 ? Buffer.from([0x81, payload.length])
+    : payload.length <= 0xffff ? (() => { const b = Buffer.alloc(4); b[0] = 0x81; b[1] = 126; b.writeUInt16BE(payload.length, 2); return b; })()
+      : (() => { const b = Buffer.alloc(10); b[0] = 0x81; b[1] = 127; b.writeBigUInt64BE(BigInt(payload.length), 2); return b; })();
+  socket.write(Buffer.concat([prefix, payload]));
+};
 
 const json = (response: ServerResponse, status: number, body: unknown): void => {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*",
@@ -38,6 +51,19 @@ const handleRequest = async (request: IncomingMessage, response: ServerResponse)
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? `${HOST}:${PORT}`}`);
   if (await handleObserverMemoryRoute(request, url, response, observerMemory, json)) return;
   if (request.method === "POST" && url.pathname === "/api/perception/mark-observed") return handleMarkObserved(request, response, perception, json);
+  if (request.method === "POST" && url.pathname === "/api/save-state") {
+    if (!browserConnected || !browserSocket) return json(response, 409, { error: "authoritative_runtime_unavailable" });
+    const requestId = randomUUID();
+    try {
+      const continuation = await new Promise<UniverseContinuationState>((resolve, reject) => {
+        pendingSaves.set(requestId, { resolve, reject }); websocketText(browserSocket!, { type: "save-state-request", requestId });
+        setTimeout(() => { if (pendingSaves.delete(requestId)) reject(new Error("Authoritative runtime did not answer save request")); }, 15_000);
+      });
+      const saved = await saveStates.create(continuation);
+      return json(response, 201, { id: saved.artifact.id, universe: saved.artifact.universe, tick: saved.artifact.tick,
+        createdAt: saved.artifact.createdAt, checksum: saved.artifact.checksum, path: path.relative(process.cwd(), saved.file) });
+    } catch (error) { return json(response, 409, { error: "save_state_failed", message: error instanceof Error ? error.message : "unknown failure" }); }
+  }
   if (request.method !== "GET") return json(response, 405, { error: "method_not_allowed" });
   if (url.pathname === "/api") return json(response, 200, {
     project: "ProtoUniverse", interfaceVersion: INTERFACE_VERSION,
@@ -73,8 +99,15 @@ const handleRequest = async (request: IncomingMessage, response: ServerResponse)
     const heartbeat = store.heartbeat;
     return json(response, 200, { connected: browserConnected, simulationVersion: heartbeat?.simulationVersion ?? null,
       seed: heartbeat?.seed ?? null, currentTick: heartbeat?.currentTick ?? null, entityCount: heartbeat?.entityCount ?? null,
+      runtime: heartbeat?.runtime ?? null,
       lastBrowserUpdateMsAgo: store.lastBrowserUpdateAt === null ? null : Date.now() - store.lastBrowserUpdateAt,
       lastSnapshotDurationMs: store.lastSnapshotDurationMs });
+  }
+  if (url.pathname === "/api/runtime/bootstrap") {
+    const selected = process.env.PROTOUNIVERSE_RESUME_SAVE;
+    if (!selected) return json(response, 200, { mode: "fresh" });
+    try { const artifact = await saveStates.load(selected); return json(response, 200, { mode: "resumed", artifact }); }
+    catch (error) { return json(response, 409, { error: "invalid_resume_save", message: error instanceof Error ? error.message : "invalid save" }); }
   }
   if (url.pathname === "/api/state") return store.snapshot
     ? json(response, 200, store.snapshot) : json(response, 503, { error: "snapshot_unavailable" });
@@ -125,6 +158,7 @@ server.on("upgrade", (request: IncomingMessage, socket) => {
   const accept = createHash("sha1").update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest("base64");
   socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
   browserConnected = true;
+  browserSocket = socket;
   let buffer = Buffer.alloc(0);
   socket.on("data", (chunk) => {
     buffer = Buffer.concat([buffer, chunk]);
@@ -144,9 +178,12 @@ server.on("upgrade", (request: IncomingMessage, socket) => {
       if (opcode === 8) return socket.end();
       if (opcode !== 1) continue;
       try {
-        const message = JSON.parse(payload.toString("utf8")) as { type?: string; snapshot?: CanonicalSnapshot; occurrences?: OccurrenceRecord[]; serializationDurationMs?: number } & Heartbeat;
+        const message = JSON.parse(payload.toString("utf8")) as { type?: string; requestId?: string; continuation?: UniverseContinuationState; error?: string; snapshot?: CanonicalSnapshot; occurrences?: OccurrenceRecord[]; serializationDurationMs?: number } & Heartbeat;
         if (message.interfaceVersion !== INTERFACE_VERSION) continue;
-        if (message.type === "heartbeat") {
+        if (message.type === "save-state-response" && message.requestId) {
+          const pending = pendingSaves.get(message.requestId); if (!pending) continue; pendingSaves.delete(message.requestId);
+          if (message.continuation) pending.resolve(message.continuation); else pending.reject(new Error(message.error ?? "Save serialization failed"));
+        } else if (message.type === "heartbeat") {
           store.updateHeartbeat(message);
           void memory.setIdentity({ seed: message.seed, simulationVersion: message.simulationVersion, interfaceVersion: INTERFACE_VERSION });
         } else if (message.type === "snapshot" && message.snapshot) {
@@ -164,8 +201,9 @@ server.on("upgrade", (request: IncomingMessage, socket) => {
       } catch { /* Ignore malformed observation messages. */ }
     }
   });
-  socket.on("close", () => { browserConnected = false; });
-  socket.on("error", () => { browserConnected = false; });
+  const disconnected = () => { if (browserSocket === socket) { browserConnected = false; browserSocket = null; for (const pending of pendingSaves.values()) pending.reject(new Error("Authoritative runtime disconnected")); pendingSaves.clear(); } };
+  socket.on("close", disconnected);
+  socket.on("error", disconnected);
 });
 
 server.listen(PORT, HOST, () => console.log(`ProtoUniverse machine bridge listening at http://${HOST}:${PORT}`));

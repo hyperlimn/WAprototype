@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "frozenArtifactHash", "evaluations", "developmentalTimeline", "informationSurvival"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "archaeological-reveal-comparison/1" },
+    "frozenArtifactHash": { "type": "string" },
+    "evaluations": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["hypothesisId", "originalHypothesis", "originalConfidence", "originalEvidence", "originalReasoning", "originalEstimatedTiming", "originalCompetingExplanations", "originalPrediction", "actualEvidence", "classification", "explanation", "successfulClues", "misleadingClues", "notReasonablyInferable"],
+        "properties": {
+          "hypothesisId": { "type": "string" },
+          "originalHypothesis": { "type": "string" },
+          "originalConfidence": { "type": "number" },
+          "originalEvidence": { "type": "array", "items": { "type": "string" } },
+          "originalReasoning": { "type": "string" },
+          "originalEstimatedTiming": { "type": ["string", "null"] },
+          "originalCompetingExplanations": { "type": "array", "items": { "type": "string" } },
+          "originalPrediction": { "type": "string" },
+          "actualEvidence": { "type": "array", "items": { "type": "string" } },
+          "classification": { "type": "string", "enum": ["confirmed", "partially supported", "contradicted", "unresolved", "not testable from available evidence"] },
+          "explanation": { "type": "string" },
+          "successfulClues": { "type": "array", "items": { "type": "string" } },
+          "misleadingClues": { "type": "array", "items": { "type": "string" } },
+          "notReasonablyInferable": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "developmentalTimeline": {
+      "type": "object", "additionalProperties": false,
+      "required": ["inferred", "actual", "correctOrdering", "incorrectOrdering", "timingErrors", "missingDevelopments", "inferredButAbsent"],
+      "properties": {
+        "inferred": { "type": "array", "items": { "type": "string" } },
+        "actual": { "type": "array", "items": { "type": "string" } },
+        "correctOrdering": { "type": "array", "items": { "type": "string" } },
+        "incorrectOrdering": { "type": "array", "items": { "type": "string" } },
+        "timingErrors": { "type": "array", "items": { "type": "string" } },
+        "missingDevelopments": { "type": "array", "items": { "type": "string" } },
+        "inferredButAbsent": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "informationSurvival": {
+      "type": "object", "additionalProperties": false,
+      "required": ["survivingSignals", "weakOrMisleadingSignals", "developmentsWithLittleRecoverableEvidence", "conclusion"],
+      "properties": {
+        "survivingSignals": { "type": "array", "items": { "type": "string" } },
+        "weakOrMisleadingSignals": { "type": "array", "items": { "type": "string" } },
+        "developmentsWithLittleRecoverableEvidence": { "type": "array", "items": { "type": "string" } },
+        "conclusion": { "type": "string" }
+      }
+    }
+  }
+}

@@ -13,6 +13,36 @@
           <h1>Universe 0</h1>
           <p>Immutable fingerprints under evolving local laws</p>
         </header>
+        <div class="observer-status">
+          <div class="simulation-ticks" aria-live="off">
+            <span>Simulation Ticks</span>
+            <strong id="simulationTicks">0</strong>
+          </div>
+          <div class="observer-lenses">
+            <label class="dimension-selector">Dimension
+              <select id="dimensionSelector" aria-label="Observer dimension">
+                <option value="composite">Composite</option>
+                <option value="spatial">Spatial</option>
+                <option value="influence">Influence</option>
+                <option value="lineage">Lineage</option>
+                <option value="frequency">Frequency</option>
+              </select>
+            </label>
+            <details id="autoCycle" class="auto-cycle">
+              <summary><span class="auto-cycle-dot" aria-hidden="true"></span>Auto Cycle <span id="autoCycleSummaryState" class="auto-cycle-summary-state">Off</span></summary>
+              <div class="auto-cycle-menu">
+                <label class="auto-cycle-enabled"><input id="autoCycleEnabled" type="checkbox" /> Enabled</label>
+                <fieldset><legend>Lenses</legend><div id="autoCycleDimensions" class="auto-cycle-dimensions"></div></fieldset>
+                <label>Interval<select id="autoCycleInterval">
+                  <option value="5000">5 seconds</option><option value="10000">10 seconds</option>
+                  <option value="20000">20 seconds</option><option value="30000">30 seconds</option>
+                  <option value="60000">60 seconds</option>
+                </select></label>
+                <p id="autoCycleStatus" class="auto-cycle-status">Off</p>
+              </div>
+            </details>
+          </div>
+        </div>
 
         <section class="sidebar-section controls" aria-label="Core controls">
           <h2>Core controls</h2>

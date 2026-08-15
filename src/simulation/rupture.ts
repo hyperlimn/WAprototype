@@ -43,6 +43,14 @@ export class RuptureSystem {
   readonly recentEvents: RuptureEvent[] = [];
   private readonly eventTicks: number[] = [];
 
+  continuationState(): { recentEvents: RuptureEvent[]; eventTicks: number[] } {
+    return { recentEvents: structuredClone(this.recentEvents), eventTicks: [...this.eventTicks] };
+  }
+  restoreContinuationState(value: { recentEvents: RuptureEvent[]; eventTicks: number[] }): void {
+    this.recentEvents.splice(0, this.recentEvents.length, ...structuredClone(value.recentEvents));
+    this.eventTicks.splice(0, this.eventTicks.length, ...value.eventTicks);
+  }
+
   update(
     relationships: RelationshipEntity[], entities: Entity[], bonds: Map<string, Bond>,
     state: WorldState, occurrences: OccurrenceLog,

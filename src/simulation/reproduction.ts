@@ -108,6 +108,9 @@ interface BirthRequest {
 export class ReproductionSystem {
   private readonly birthTicks: number[] = [];
 
+  continuationState(): number[] { return [...this.birthTicks]; }
+  restoreContinuationState(ticks: number[]): void { this.birthTicks.splice(0, this.birthTicks.length, ...ticks); }
+
   update(entities: Entity[], relationships: RelationshipEntity[], state: WorldState): Entity[] {
     const requests: BirthRequest[] = [];
     const ordered = [...relationships].sort((a, b) => a.id.localeCompare(b.id));
