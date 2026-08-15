@@ -31,6 +31,10 @@ export class OperatorRoutes {
       json(response, 200, { commands: this.manager.catalog(), experiments, runtime: this.runtime(), saveStatePattern: "data/universes/<universe>/save-states/save-<12-digit-tick>.json" }); return true;
     }
     if (request.method === "GET" && url.pathname === "/api/operator/runs") { json(response, 200, { runs: this.manager.list() }); return true; }
+    if (request.method === "POST" && url.pathname === "/api/operator/stop-all") {
+      try { json(response, 200, { stopped: await this.manager.stopAll() }); }
+      catch (error) { json(response, 409, { error: "operator_stop_all_failed", message: error instanceof Error ? error.message : "stop failed" }); } return true;
+    }
     if (request.method === "POST" && url.pathname === "/api/operator/run") {
       try { const value = await body(request) as { commandId?: unknown; args?: unknown };
         if (typeof value.commandId !== "string") throw new Error("commandId is required");

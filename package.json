@@ -4,9 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n app,bridge \"npm:dev:app\" \"npm:dev:bridge\"",
+    "dev": "npm run dev:supervisor",
     "dev:app": "vite",
     "dev:bridge": "tsx server/index.ts",
+    "dev:supervisor": "tsx server/supervisor/supervisorIndex.ts",
     "mcp": "tsx server/mcp/index.ts",
     "lab:mcp": "tsx server/laboratory/mcpIndex.ts",
     "lab:once": "tsx scripts/lab-once.mjs",

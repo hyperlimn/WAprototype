@@ -1,11 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
-import { link, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { SAVE_STATE_SCHEMA_VERSION, validateContinuation, type SaveStateArtifact, type UniverseContinuationState } from "../../src/simulation/saveState.js";
 
 const safe = (value: string): string => { if (!/^[a-zA-Z0-9._-]{1,120}$/.test(value)) throw new Error("Invalid save-state identifier"); return value; };
 const canonical = (value: unknown): string => JSON.stringify(value);
 export const continuationHash = (value: UniverseContinuationState): string => createHash("sha256").update(canonical(value)).digest("hex");
+export interface SaveStateSummary { id: string; universe: string; tick: number | null; createdAt: string | null; checksum: string | null;
+  simulationVersion: string | null; resumable: boolean; compatibility: "compatible" | "invalid"; reason: string | null }
 
 export class SaveStateStore {
   constructor(readonly root = path.resolve(process.env.PROTOUNIVERSE_SAVE_ROOT ?? "data/universes")) {}
@@ -30,5 +32,18 @@ export class SaveStateStore {
     validateContinuation(artifact.continuation, artifact.simulationVersion);
     if (continuationHash(artifact.continuation) !== artifact.checksum?.value) throw new Error("Save-state checksum mismatch");
     return artifact;
+  }
+  async list(universe: string): Promise<SaveStateSummary[]> {
+    const directory = path.join(this.root, safe(universe), "save-states");
+    const names = await readdir(directory).catch((error: NodeJS.ErrnoException) => error.code === "ENOENT" ? [] : Promise.reject(error));
+    const summaries = await Promise.all(names.filter((name) => /^save-[a-zA-Z0-9._-]+\.json$/.test(name)).map(async (name) => {
+      const id = name.slice(0, -5);
+      try { const artifact = await this.load(id, universe); return { id: artifact.id, universe: artifact.universe, tick: artifact.tick,
+          createdAt: artifact.createdAt, checksum: artifact.checksum.value, simulationVersion: artifact.simulationVersion,
+          resumable: true, compatibility: "compatible" as const, reason: null }; }
+      catch (error) { return { id, universe, tick: null, createdAt: null, checksum: null, simulationVersion: null,
+          resumable: false, compatibility: "invalid" as const, reason: error instanceof Error ? error.message : "Invalid save-state" }; }
+    }));
+    return summaries.sort((a, b) => (b.tick ?? -1) - (a.tick ?? -1) || b.id.localeCompare(a.id));
   }
 }

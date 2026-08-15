@@ -7,10 +7,10 @@ const row = (label: string, value: string) => `<div><dt>${label}</dt><dd>${value
 
 export function updateInspector(element: HTMLElement, entity: Entity | null, tick = 0): void {
   if (!entity) {
-    element.innerHTML = `<h2>Entity inspector</h2><p class="empty">Select a point to inspect its immutable fingerprint and current state.</p>`;
+    element.innerHTML = `<p class="empty">Select a point to inspect its immutable fingerprint and current state.</p>`;
     return;
   }
-  element.innerHTML = `<h2>Entity ${entity.creationIndex.toString().padStart(3, "0")}</h2>
+  element.innerHTML = `<h3>Entity ${entity.creationIndex.toString().padStart(3, "0")}</h3>
     <p class="fingerprint">${entity.fingerprint}</p>
     <dl>${[
       row("alpha", entity.alpha.toFixed(6)),
@@ -38,7 +38,7 @@ export function updateRelationshipInspector(
   parents: [Entity, Entity],
 ): void {
   const rupture = ruptureParameters(entity.fingerprint);
-  element.innerHTML = `<h2>Relationship ${entity.id}</h2>
+  element.innerHTML = `<h3>Relationship ${entity.id}</h3>
     <p class="fingerprint">${entity.fingerprint}</p>
     <dl>${[
       row("Parent A", `${entity.parentAId} / ${parents[0].fingerprint.slice(0, 12)}…`),

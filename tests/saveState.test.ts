@@ -34,3 +34,15 @@ test("write-once artifacts validate checksum, remain unchanged on load/resume, a
     await assert.rejects(() => store.load(bad), /incompatible|checksum/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test("save-state library is newest-first and marks corrupt artifacts unavailable", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "protouniverse-save-list-")), store = new SaveStateStore(root);
+  try {
+    const universe = new Universe("library-test"); advance(universe, 10); await store.create(universe.continuationState());
+    advance(universe, 10); await store.create(universe.continuationState());
+    const corrupt = store.file("library-test", "save-corrupt"); await writeFile(corrupt, "{not-json", "utf8");
+    const saves = await store.list("library-test"); assert.deepEqual(saves.map((save) => save.id), ["save-000000000020", "save-000000000010", "save-corrupt"]);
+    assert.ok(saves[0].resumable); assert.equal(saves[0].tick, 20); assert.equal(saves[0].checksum?.length, 64);
+    assert.equal(saves[2].resumable, false); assert.equal(saves[2].compatibility, "invalid"); assert.equal(saves[2].checksum, null);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

@@ -1,4 +1,4 @@
-export type OperatorGroup = "Universe" | "Observation" | "Laboratory" | "Help";
+export type OperatorGroup = "Universe" | "Observation" | "Laboratory" | "Runtime" | "Help";
 export interface CommandOption { name: string; type: "string" | "number"; required?: boolean; default?: string | number; description: string }
 export interface ProtoUniverseCommand { id: string; label: string; group: OperatorGroup; purpose: string; cli: string; options: CommandOption[];
   examples: string[]; safety: string; gui: boolean; longRunning: boolean }
@@ -20,6 +20,15 @@ export const COMMAND_REGISTRY: readonly ProtoUniverseCommand[] = [
   { id: "lab.reveal", label: "Launch reveal", group: "Laboratory", purpose: "Reveal and compare only after a valid frozen reconstruction exists.",
     cli: "npm run lab:reveal -- --experiment <id>", options: [{ name: "experiment", type: "string", required: true, description: "Experiment ID" }],
     examples: ["npm run lab:reveal -- --experiment archaeology-005"], safety: "Deliberate action; existing chamber integrity checks cannot be bypassed.", gui: true, longRunning: true },
+  { id: "service.bridge-api.restart", label: "Start / Restart Bridge + API", group: "Runtime", purpose: "Start or restart the combined bridge and Operator API through the loopback supervisor.",
+    cli: "npm run dev:bridge", options: [], examples: ["npm run dev:supervisor", "npm run dev:bridge"],
+    safety: "Supervisor controls only its own repo-scoped bridge child and refuses an occupied unmanaged port.", gui: true, longRunning: false },
+  { id: "runtime.restart-all", label: "Restart Everything", group: "Runtime", purpose: "Save the live universe, stop the supervisor-owned runtime, and resume the exact save.",
+    cli: "Restart Everything (save → stop → resume)", options: [], examples: ["npm run dev"],
+    safety: "Save-first is mandatory; failure aborts before shutdown. Supervisor itself remains alive.", gui: true, longRunning: true },
+  { id: "runtime.resume-save", label: "Resume Selected Save", group: "Runtime", purpose: "Replace the live runtime with a validated immutable save selected by ID.",
+    cli: "Resume <saveId>", options: [{ name: "saveId", type: "string", required: true, description: "Canonical immutable save ID" }], examples: ["Resume save-000000186465"],
+    safety: "Deliberate timeline replacement; the supervisor resolves and validates the ID internally and never accepts a path.", gui: true, longRunning: true },
   { id: "help", label: "Command help", group: "Help", purpose: "Display ProtoUniverse command metadata without starting a process.",
     cli: "npm run help", options: [], examples: ["npm run help"], safety: "Metadata only; never executes a tool.", gui: true, longRunning: false },
 ] as const;

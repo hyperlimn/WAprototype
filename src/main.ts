@@ -18,7 +18,7 @@ import { bindEntityCloseup } from "./closeup/entityCloseupController";
 async function main(): Promise<void> {
 const canvas = document.querySelector<HTMLCanvasElement>("#universe")!;
 const instruments = document.querySelector<HTMLElement>("#instruments")!;
-const inspector = document.querySelector<HTMLElement>("#inspector")!;
+const inspector = document.querySelector<HTMLElement>("#inspectorValues")!;
 const occurrences = document.querySelector<HTMLElement>("#occurrences")!;
 const copyStatus = document.querySelector<HTMLElement>("#copyStatus")!;
 const bridgeConnection = document.querySelector<HTMLElement>("#bridgeConnection")!;
@@ -27,6 +27,9 @@ const memoryMode = document.querySelector<HTMLElement>("#memoryMode")!;
 const memoryEvents = document.querySelector<HTMLElement>("#memoryEvents")!;
 const memoryLatest = document.querySelector<HTMLElement>("#memoryLatest")!;
 const simulationTicks = document.querySelector<HTMLElement>("#simulationTicks")!;
+const bridgeSnapshotDuration = document.querySelector<HTMLElement>("#bridgeSnapshotDuration")!;
+const renderFrameDuration = document.querySelector<HTMLElement>("#renderFrameDuration")!;
+const renderedEdges = document.querySelector<HTMLElement>("#renderedEdges")!;
 bindCollapsiblePanels(document.querySelector<HTMLElement>(".sidebar")!);
 bindOperatorConsole(document.querySelector<HTMLElement>("#operatorConsole")!);
 document.querySelector<HTMLElement>("#simulationVersion")!.textContent = SIMULATION_VERSION;
@@ -74,6 +77,7 @@ const closeup = bindEntityCloseup({
   fingerprint: document.querySelector<HTMLElement>("#entityCloseupFingerprint")!,
   presetButtons: [...document.querySelectorAll<HTMLButtonElement>("[data-closeup-preset]")],
   morphologyValues: document.querySelector<HTMLElement>("#morphologyInspectorValues")!,
+  panelAction: document.querySelector<HTMLButtonElement>("#inspectorCloseup")!,
 }, camera, renderer, dimensionSelector, autoCycle, () => universe);
 
 function replaceUniverse(seed: string): void {
@@ -200,6 +204,7 @@ function renderInterval(): number {
   if (speed >= 1000) return 500;
   if (speed >= 100) return 200;
   if (speed >= 20) return 100;
+  if (universe.relationshipLayer.entities.size > 2_000) return 33;
   return 0;
 }
 
@@ -213,10 +218,13 @@ function frame(now: number): void {
   renderer.draw(universe);
   closeup.update();
   instrumentTimer += elapsed;
-  if (instrumentTimer > 150) {
-    updateInstruments(instruments, universe);
+  if (instrumentTimer > 1_000) {
+    if (!instruments.closest(".sidebar-section")?.classList.contains("is-collapsed")) updateInstruments(instruments, universe);
     simulationTicks.textContent = universe.state.ticks.toLocaleString();
     updateOccurrences(occurrences, universe);
+    bridgeSnapshotDuration.textContent = bridgeStatus.lastSnapshotDurationMs === null ? "—" : `${bridgeStatus.lastSnapshotDurationMs.toFixed(1)} ms`;
+    renderFrameDuration.textContent = `${renderer.profile.frameTimeMs.toFixed(1)} ms`;
+    renderedEdges.textContent = `${renderer.profile.renderedEdges.toLocaleString()} / ${renderer.profile.relationshipCandidates.toLocaleString()}`;
     if (renderer.selected) updateInspector(inspector, renderer.selected, universe.state.ticks);
     else if (renderer.selectedRelationship && universe.relationshipLayer.entities.has(renderer.selectedRelationship.id)) {
       const relationship = renderer.selectedRelationship;

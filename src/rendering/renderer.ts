@@ -22,6 +22,7 @@ export class Renderer {
   showRelationshipEvents = true;
   showDimensionalTransitions = true;
   dimension: DimensionMode = "composite";
+  readonly profile = { frameTimeMs: 0, relationshipCandidates: 0, renderedEdges: 0 };
 
   constructor(readonly canvas: HTMLCanvasElement, readonly camera: Camera) {
     const context = canvas.getContext("2d");
@@ -40,6 +41,7 @@ export class Renderer {
   }
 
   draw(universe: Universe): void {
+    const frameStarted = performance.now(); let renderedEdges = 0;
     this.resize();
     const ctx = this.context;
     const dpr = window.devicePixelRatio || 1;
@@ -68,11 +70,13 @@ export class Renderer {
       for (const interaction of universe.higherOrderPhysics.activeInteractions) {
         const [ax, ay] = this.camera.worldToScreen(interaction.a.x, interaction.a.y, width, height);
         const [bx, by] = this.camera.worldToScreen(interaction.b.x, interaction.b.y, width, height);
+        if (!this.segmentVisible(ax, ay, bx, by, width, height)) continue;
         ctx.strokeStyle = `rgba(194, 217, 204, ${0.035 * higherOrderOpacity(this.dimension)})`;
         ctx.beginPath();
         ctx.moveTo(ax, ay);
         ctx.lineTo(bx, by);
         ctx.stroke();
+        renderedEdges++;
       }
     }
 
@@ -92,10 +96,11 @@ export class Renderer {
         ctx.moveTo(ax, ay);
         ctx.lineTo(bx, by);
         ctx.stroke();
+        renderedEdges++;
       }
     }
 
-    if (this.dimension !== "composite") this.drawProjectedRelationships(universe, width, height);
+    if (this.dimension !== "composite") renderedEdges += this.drawProjectedRelationships(universe, width, height);
     const lineageEntities = this.dimension === "lineage" ? this.drawLineage(universe, width, height) : new Set<number>();
 
     for (const entity of universe.entities) {
@@ -181,10 +186,13 @@ export class Renderer {
       }
     }
     if (this.observationMode && this.dimension === "composite") this.drawOccurrenceTraces(universe, width, height);
+    this.profile.frameTimeMs = performance.now() - frameStarted;
+    this.profile.relationshipCandidates = universe.relationshipLayer.entities.size;
+    this.profile.renderedEdges = renderedEdges;
   }
 
-  private drawProjectedRelationships(universe: Universe, width: number, height: number): void {
-    const ctx = this.context;
+  private drawProjectedRelationships(universe: Universe, width: number, height: number): number {
+    const ctx = this.context; let rendered = 0;
     for (const relationship of universe.relationshipLayer.entities.values()) {
       const projection = projectRelationship(this.dimension, relationship);
       if (!projection.visible) continue;
@@ -192,10 +200,12 @@ export class Renderer {
       if (!a || !b) continue;
       const [ax, ay] = this.camera.worldToScreen(a.x, a.y, width, height);
       const [bx, by] = this.camera.worldToScreen(b.x, b.y, width, height);
+      if (!this.segmentVisible(ax, ay, bx, by, width, height)) continue;
       const [r, g, blue] = projection.color;
       ctx.strokeStyle = `rgba(${r}, ${g}, ${blue}, ${projection.alpha})`;
       ctx.lineWidth = projection.lineWidth;
       ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      rendered++;
       const [x, y] = this.camera.worldToScreen(relationship.x, relationship.y, width, height);
       ctx.fillStyle = `rgba(${r}, ${g}, ${blue}, ${Math.min(.82, projection.alpha + .14)})`;
       ctx.beginPath(); ctx.arc(x, y, projection.lineWidth + 1.2, 0, Math.PI * 2); ctx.fill();
@@ -203,6 +213,11 @@ export class Renderer {
         ctx.strokeStyle = "#f5d987"; ctx.lineWidth = 1; ctx.strokeRect(x - 5, y - 5, 10, 10);
       }
     }
+    return rendered;
+  }
+
+  private segmentVisible(ax: number, ay: number, bx: number, by: number, width: number, height: number): boolean {
+    return !((ax < 0 && bx < 0) || (ay < 0 && by < 0) || (ax > width && bx > width) || (ay > height && by > height));
   }
 
   private drawLineage(universe: Universe, width: number, height: number): Set<number> {

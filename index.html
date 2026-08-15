@@ -76,9 +76,10 @@
         <section class="sidebar-section instruments" aria-label="World instruments">
           <h2>World instruments</h2><dl id="instruments"></dl>
         </section>
-        <section class="sidebar-section inspector" id="inspector" aria-label="Entity inspector">
-          <h2>Entity / relationship inspector</h2>
-          <p class="empty">Select a point to inspect its immutable fingerprint and current state.</p>
+        <section class="sidebar-section inspector" id="inspector" aria-label="Entity selection">
+          <h2>Entity Selection</h2>
+          <div id="inspectorValues"><p class="empty">Select a point to inspect its immutable fingerprint and current state.</p></div>
+          <button id="inspectorCloseup" type="button" hidden disabled>View Entity Up Close</button>
         </section>
         <section class="sidebar-section occurrences" aria-label="Recent occurrences">
           <h2>Occurrences</h2><ol id="occurrences"><li class="empty">No occurrences recorded.</li></ol>
@@ -94,6 +95,8 @@
             <h3>Universe</h3>
             <button type="button" data-operator-command="universe.save">Save current universe state</button>
             <dl class="operator-runtime"><div><dt>Runtime</dt><dd id="operatorRuntime">unavailable</dd></div><div><dt>Save path</dt><dd id="operatorSavePattern">—</dd></div></dl>
+            <div class="save-state-library"><h4>Save States</h4><select id="operatorSaveStates" size="4" aria-label="Saved universe states"></select>
+              <p id="operatorSaveStatus" class="operator-note">Loading save states…</p><button id="operatorResumeSave" type="button" disabled>Resume Selected Save</button></div>
           </div>
           <div class="operator-group">
             <h3>Observation</h3>
@@ -119,11 +122,23 @@
           <dl>
             <div><dt>Bridge</dt><dd id="bridgeConnection">disconnected</dd></div>
             <div><dt>API</dt><dd>localhost:8787</dd></div>
+            <div><dt>Frontend</dt><dd id="supervisorFrontend">unmanaged</dd></div>
+            <div><dt>Bridge/API owner</dt><dd id="supervisorBridge">unmanaged</dd></div>
+            <div><dt>Last restart</dt><dd id="lastRestartResult">none</dd></div>
             <div><dt>Last publish</dt><dd id="bridgeLastPublish">never</dd></div>
+            <div><dt>Snapshot build</dt><dd id="bridgeSnapshotDuration">—</dd></div>
+            <div><dt>Render frame</dt><dd id="renderFrameDuration">—</dd></div>
+            <div><dt>Rendered edges</dt><dd id="renderedEdges">—</dd></div>
             <div><dt>Memory</dt><dd id="memoryMode">unavailable</dd></div>
             <div><dt>Memory events</dt><dd id="memoryEvents">0</dd></div>
             <div><dt>Memory latest</dt><dd id="memoryLatest">none</dd></div>
           </dl>
+          <div class="service-controls">
+            <button id="restartEverything" class="restart-everything" type="button">Restart Everything</button>
+            <label class="restart-save"><input type="checkbox" checked disabled /> Save current universe first (required)</label>
+            <button id="bridgeApiControl" type="button">Start / Restart Bridge + API</button>
+            <p id="supervisorStatus" class="hint">Supervisor unavailable</p>
+          </div>
         </section>
       </aside>
       <div class="canvas-region">
@@ -145,7 +160,7 @@
               <button type="button" data-closeup-preset="pole">Pole</button>
               <button type="button" data-closeup-preset="equator">Equator</button>
             </div>
-            <details id="morphologyInspector" class="morphology-inspector" open>
+            <details id="morphologyInspector" class="morphology-inspector">
               <summary>Morphology</summary>
               <dl id="morphologyInspectorValues"></dl>
             </details>
@@ -154,6 +169,7 @@
         </section>
       </div>
     </main>
+    <div id="operatorToast" class="operator-toast" role="status" aria-live="polite" hidden></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

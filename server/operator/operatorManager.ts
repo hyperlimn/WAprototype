@@ -63,5 +63,13 @@ export class OperatorManager {
     await this.terminateImpl(child);
     return this.public(run);
   }
+  async stopAll(): Promise<OperatorRun[]> {
+    const stopped: OperatorRun[] = []; for (const run of this.runs.values()) {
+      if (!run.child || run.status !== "running") continue;
+      run.status = "stopped"; run.finishedAt = new Date().toISOString();
+      run.output = `${run.output}${run.finishedAt} [stop requested by runtime supervisor]\n`.slice(-MAX_OUTPUT);
+      await this.terminateImpl(run.child); stopped.push(this.public(run));
+    } return stopped;
+  }
   private public(run: OperatorRun & { child?: ChildProcess }): OperatorRun { const { child: _child, ...value } = run; return { ...value }; }
 }

@@ -4,7 +4,7 @@ import { buildWorldSnapshot } from "./worldSnapshot";
 
 export const MACHINE_INTERFACE_VERSION = "protouniverse-machine-interface/5";
 export const HEARTBEAT_INTERVAL_MS = 1_000;
-export const SNAPSHOT_INTERVAL_MS = 5_000;
+export const SNAPSHOT_INTERVAL_MS = 15_000;
 
 export interface MachineBridgeStatus {
   connected: boolean;

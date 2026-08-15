@@ -20,6 +20,7 @@ import type { Duplex } from "node:stream";
 import { SaveStateStore } from "./save-state/saveStateStore.js";
 import type { UniverseContinuationState } from "../src/simulation/saveState.js";
 import { OperatorRoutes } from "./operator/operatorRoutes.js";
+import { corsHeaders } from "./cors.js";
 
 const HOST = process.env.PROTOUNIVERSE_BRIDGE_HOST ?? "127.0.0.1";
 const PORT = Number(process.env.PROTOUNIVERSE_BRIDGE_PORT ?? 8787);
@@ -32,7 +33,9 @@ let browserSocket: Duplex | null = null;
 const saveStates = new SaveStateStore();
 const pendingSaves = new Map<string, { resolve(value: UniverseContinuationState): void; reject(error: Error): void }>();
 const operator = new OperatorRoutes(() => ({ connected: browserConnected, seed: store.heartbeat?.seed ?? null,
-  currentTick: store.heartbeat?.currentTick ?? null, provenance: store.heartbeat?.runtime ?? null }));
+  currentTick: store.heartbeat?.currentTick ?? null, provenance: store.heartbeat?.runtime ?? null,
+  snapshotSerializationMs: store.lastSnapshotDurationMs, snapshotTick: store.snapshot?.metadata.currentTick ?? null,
+  snapshotEntities: store.snapshot?.entities?.length ?? 0, snapshotRelationships: store.snapshot?.relationships?.length ?? 0 }));
 const websocketText = (socket: Duplex, value: unknown): void => {
   const payload = Buffer.from(JSON.stringify(value)), prefix = payload.length < 126 ? Buffer.from([0x81, payload.length])
     : payload.length <= 0xffff ? (() => { const b = Buffer.alloc(4); b[0] = 0x81; b[1] = 126; b.writeUInt16BE(payload.length, 2); return b; })()
@@ -41,8 +44,7 @@ const websocketText = (socket: Duplex, value: unknown): void => {
 };
 
 const json = (response: ServerResponse, status: number, body: unknown): void => {
-  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS", "Cache-Control": "no-store" });
+  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", ...corsHeaders("GET, POST, PATCH, OPTIONS"), "Cache-Control": "no-store" });
   response.end(JSON.stringify(body));
 };
 const notFound = (response: ServerResponse, resource: string, id?: string): void =>

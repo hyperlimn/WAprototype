@@ -8,7 +8,7 @@ import { morphologyInspectorEntries } from "./morphologyInspector.js";
 import type { CloseupCameraPreset } from "./symmetryCamera.js";
 import type { EntityCloseupHandle } from "./threeEntityCloseup.js";
 
-export const CLOSEUP_INVITATION_ZOOM = 7;
+export const CLOSEUP_INVITATION_ZOOM = 10.5;
 
 interface Elements {
   invitation: HTMLButtonElement;
@@ -19,11 +19,12 @@ interface Elements {
   fingerprint: HTMLElement;
   presetButtons: readonly HTMLButtonElement[];
   morphologyValues: HTMLElement;
+  panelAction: HTMLButtonElement;
 }
 
 export function bindEntityCloseup(elements: Elements, camera: Camera, renderer: Renderer,
   selector: DimensionSelectorController, autoCycle: DimensionAutoCycle,
-  getUniverse: () => Universe): { update(): void; exit(): void; active(): boolean } {
+  getUniverse: () => Universe): { update(): void; enter(): void; exit(): void; active(): boolean } {
   let session: CloseupSession | null = null;
   let activeHandle: EntityCloseupHandle | null = null;
   let loadGeneration = 0;
@@ -57,13 +58,20 @@ export function bindEntityCloseup(elements: Elements, camera: Camera, renderer: 
     session = new CloseupSession(saved, () => disposeMounted());
     elements.identity.textContent = "Selected entity";
     elements.fingerprint.textContent = entity.fingerprint;
+    (elements.morphologyValues.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open");
     elements.morphologyValues.replaceChildren(); selectPreset("free");
     elements.closeup.hidden = false; elements.invitation.hidden = true;
     autoCycle.visibilityChanged(false);
     try {
       const { mountThreeEntityCloseup } = await import("./threeEntityCloseup.js");
       if (generation !== loadGeneration) return;
-      const handle = mountThreeEntityCloseup(elements.viewport, entity, () => getUniverse().state.ticks);
+      const handle = mountThreeEntityCloseup(elements.viewport, entity, () => getUniverse().state.ticks, () => {
+        const connections = []; for (const relationship of getUniverse().relationshipLayer.entities.values()) {
+          if (relationship.parentAId !== entity.creationIndex && relationship.parentBId !== entity.creationIndex) continue;
+          connections.push({ id: relationship.id, state: relationship.spatialActive && relationship.influenceActive ? "dual" as const
+            : relationship.spatialActive ? "spatial" as const : relationship.influenceActive ? "influence" as const : "dormant" as const });
+        } return connections;
+      });
       activeHandle = handle; disposeMounted = () => handle.dispose();
       for (const entry of morphologyInspectorEntries(handle.genome)) {
         const row = document.createElement("div"), term = document.createElement("dt"), value = document.createElement("dd");
@@ -79,10 +87,12 @@ export function bindEntityCloseup(elements: Elements, camera: Camera, renderer: 
     }
   };
   elements.invitation.addEventListener("click", () => void enter());
+  elements.panelAction.addEventListener("click", () => void enter());
   elements.back.addEventListener("click", exit);
   return {
-    update: () => { elements.invitation.hidden = Boolean(session) || elements.closeup.hidden === false
-      || !renderer.selected || camera.zoom < CLOSEUP_INVITATION_ZOOM; },
+    update: () => { elements.panelAction.disabled = !renderer.selected; elements.panelAction.hidden = !renderer.selected;
+      elements.invitation.hidden = Boolean(session) || elements.closeup.hidden === false || !renderer.selected || camera.zoom < CLOSEUP_INVITATION_ZOOM; },
+    enter: () => void enter(),
     exit,
     active: () => elements.closeup.hidden === false,
   };

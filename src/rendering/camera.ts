@@ -13,9 +13,10 @@ export class Camera {
 
   zoomAt(factor: number, sx: number, sy: number, width: number, height: number): void {
     const before = this.screenToWorld(sx, sy, width, height);
-    this.zoom = Math.max(0.12, Math.min(8, this.zoom * factor));
+    this.zoom = Math.max(0.12, Math.min(Camera.MAX_ZOOM, this.zoom * factor));
     const after = this.screenToWorld(sx, sy, width, height);
     this.x += before[0] - after[0];
     this.y += before[1] - after[1];
   }
+  static readonly MAX_ZOOM = 12;
 }
